@@ -87,6 +87,11 @@ int main()
         for (int sample = 0; sample < gainBuffer.getNumSamples(); ++sample)
             gainCorrect = gainCorrect && std::abs(gainBuffer.getSample(channel, sample) - 0.1f * expectedGain) < 0.0001f;
     expect(gainCorrect, "smoothed output gain reaches the requested +6 dB without a discontinuous step");
+    bool stereoGainLinked = true;
+    for (int sample = 0; sample < gainBuffer.getNumSamples(); ++sample)
+        stereoGainLinked = stereoGainLinked &&
+            std::abs(gainBuffer.getSample(0, sample) - gainBuffer.getSample(1, sample)) < 0.000001f;
+    expect(stereoGainLinked, "stereo channels receive the same gain ramp on each frame");
 
     juce::AudioProcessor::BusesLayout monoLayout;
     monoLayout.inputBuses.add(juce::AudioChannelSet::mono());
