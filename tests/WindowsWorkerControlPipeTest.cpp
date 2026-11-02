@@ -1,10 +1,9 @@
 #include "AudioIpc/WindowsWorkerControlPipe.h"
+#include "AudioIpc/WindowsWorkerProcess.h"
 
 #include <windows.h>
 
-#include <atomic>
 #include <string>
-#include <thread>
 
 using namespace voice_studio::ipc;
 
@@ -35,8 +34,84 @@ static WorkerStatusMessage makeStatus(const WorkerCommandMessage& command)
     return m;
 }
 
-int main()
+static int runPipeChild(const std::wstring& name, bool crashBeforeReply)
 {
+    WindowsWorkerControlPipe endpoint;
+    if (!endpoint.connectClient(name, 5000))
+        return 20;
+    const auto command = makeCommand();
+    if (!endpoint.sendCommand(command, 1000))
+        return 21;
+    if (crashBeforeReply)
+        return 77;
+
+    WorkerStatusMessage response{};
+    if (!endpoint.receiveStatus(response, 3000))
+        return 22;
+    if (response.state != static_cast<std::uint16_t>(WorkerState::processing) ||
+        response.generation != command.generation ||
+        response.requestId != command.requestId ||
+        response.heartbeatMonotonicNs != 123456789)
+        return 23;
+    return 0;
+}
+
+static bool runSeparateProcessExchange(const std::wstring& executable,
+                                       const std::wstring& pipeName,
+                                       bool crashBeforeReply)
+{
+    WindowsWorkerControlPipe server;
+    if (!server.createServer(pipeName))
+        return false;
+
+    WindowsWorkerProcess worker;
+    const std::wstring arguments = (crashBeforeReply ? L"--pipe-crash-child " : L"--pipe-child ") +
+                                   std::wstring(L"\\\"") + pipeName + L"\\\"";
+    if (!worker.launch(executable, arguments))
+        return false;
+
+    if (!server.waitForClient(5000))
+    {
+        worker.terminate();
+        return false;
+    }
+
+    WorkerCommandMessage command{};
+    if (!server.receiveCommand(command, 3000) ||
+        command.command != static_cast<std::uint16_t>(WorkerCommand::start) ||
+        command.generation != 17 || command.requestId != 29)
+    {
+        worker.terminate();
+        return false;
+    }
+
+    if (crashBeforeReply)
+    {
+        const bool exited = worker.waitForExit(5000);
+        WorkerStatusMessage status{};
+        const bool pipeClosed = !server.receiveStatus(status, 250);
+        const bool result = exited && worker.hasExited() && pipeClosed;
+        worker.closeAfterExit();
+        return result;
+    }
+
+    if (!server.sendStatus(makeStatus(command), 3000) || !worker.waitForExit(5000))
+    {
+        worker.terminate();
+        return false;
+    }
+    const bool cleanExit = worker.hasExited() && worker.closeAfterExit();
+    server.close();
+    return cleanExit;
+}
+
+int wmain(int argc, wchar_t** argv)
+{
+    if (argc == 3 && std::wstring(argv[1]) == L"--pipe-child")
+        return runPipeChild(argv[2], false);
+    if (argc == 3 && std::wstring(argv[1]) == L"--pipe-crash-child")
+        return runPipeChild(argv[2], true);
+
     WindowsWorkerControlPipe server;
     if (server.createServer(L"") || server.isConnected())
         return 1;
@@ -46,56 +121,38 @@ int main()
     if (!server.createServer(name) || server.isConnected())
         return 2;
 
-    std::atomic<bool> clientOk{false};
-    std::atomic<bool> keepClientOpen{true};
-    std::thread client([&]
+    // In-process endpoint exchange still covers simultaneous client/server calls.
+    bool inProcessOk = false;
     {
-        WindowsWorkerControlPipe endpoint;
-        if (!endpoint.connectClient(name, 5000))
-            return;
+        WindowsWorkerControlPipe client;
+        if (!client.connectClient(name, 5000) || !server.waitForClient(5000))
+            return 3;
         const auto command = makeCommand();
-        if (!endpoint.sendCommand(command))
-            return;
+        WorkerCommandMessage received{};
+        if (!client.sendCommand(command) || !server.receiveCommand(received) ||
+            received.generation != command.generation)
+            return 4;
+        if (!server.sendStatus(makeStatus(received)))
+            return 5;
         WorkerStatusMessage response{};
-        if (!endpoint.receiveStatus(response))
-            return;
-        clientOk.store(response.state == static_cast<std::uint16_t>(WorkerState::processing) &&
-                        response.generation == command.generation &&
-                        response.requestId == command.requestId &&
-                        response.heartbeatMonotonicNs == 123456789,
-                        std::memory_order_release);
-    });
-
-    if (!server.waitForClient())
-    {
-        client.join();
-        return 3;
+        inProcessOk = client.receiveStatus(response) &&
+                      response.requestId == command.requestId;
     }
-    WorkerCommandMessage received{};
-    if (!server.receiveCommand(received))
-    {
-        server.close();
-        client.join();
-        return 4;
-    }
-    if (received.command != static_cast<std::uint16_t>(WorkerCommand::start) ||
-        received.generation != 17 || received.requestId != 29)
-    {
-        server.close();
-        client.join();
-        return 5;
-    }
-    const auto status = makeStatus(received);
-    if (!server.sendStatus(status))
-    {
-        server.close();
-        client.join();
-        return 6;
-    }
-
-    client.join();
     server.close();
-    if (!clientOk.load(std::memory_order_acquire) || server.isConnected())
+    if (!inProcessOk)
+        return 6;
+
+    wchar_t executable[MAX_PATH]{};
+    const DWORD length = GetModuleFileNameW(nullptr, executable, MAX_PATH);
+    if (length == 0 || length >= MAX_PATH)
         return 7;
+
+    const std::wstring suffix = std::to_wstring(GetCurrentProcessId());
+    const std::wstring normalPipe = L"\\\\.\\pipe\\VoiceStudioControlProcess-" + suffix;
+    const std::wstring crashPipe = L"\\\\.\\pipe\\VoiceStudioControlCrash-" + suffix;
+    if (!runSeparateProcessExchange(executable, normalPipe, false))
+        return 8;
+    if (!runSeparateProcessExchange(executable, crashPipe, true))
+        return 9;
     return 0;
 }
