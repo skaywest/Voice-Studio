@@ -109,17 +109,25 @@ std::uint64_t expectedSample(std::uint64_t block, std::size_t index)
     return (block * 131u + index * 17u) & 0xffffu;
 }
 
-bool consume(const wchar_t* mappingName, const wchar_t* readyName)
+bool consume(const wchar_t* mappingName, const wchar_t* readyName, DWORD parentPid)
 {
+    HANDLE parent = OpenProcess(SYNCHRONIZE, FALSE, parentPid);
+    if (!parent)
+        return false;
+
     HANDLE mapping = OpenFileMappingW(FILE_MAP_ALL_ACCESS, FALSE, mappingName);
     if (!mapping)
+    {
+        CloseHandle(parent);
         return false;
+    }
 
     auto* shared = static_cast<SharedRegion*>(
         MapViewOfFile(mapping, FILE_MAP_ALL_ACCESS, 0, 0, sizeof(SharedRegion)));
     if (!shared)
     {
         CloseHandle(mapping);
+        CloseHandle(parent);
         return false;
     }
 
@@ -130,14 +138,23 @@ bool consume(const wchar_t* mappingName, const wchar_t* readyName)
         if (ready) CloseHandle(ready);
         UnmapViewOfFile(shared);
         CloseHandle(mapping);
+        CloseHandle(parent);
         return false;
     }
     SetEvent(ready);
 
+    const ULONGLONG deadline = GetTickCount64() + kTimeoutMs;
     std::uint64_t position = 0;
     bool valid = true;
     while (position < kBlockCount)
     {
+        if (GetTickCount64() >= deadline ||
+            WaitForSingleObject(parent, 0) != WAIT_TIMEOUT)
+        {
+            valid = false;
+            break;
+        }
+
         Slot& slot = shared->slots[position % kCapacity];
         const auto sequence = static_cast<std::uint64_t>(
             InterlockedCompareExchange64(&slot.sequence, 0, 0));
@@ -173,6 +190,7 @@ bool consume(const wchar_t* mappingName, const wchar_t* readyName)
     UnmapViewOfFile(shared);
     CloseHandle(ready);
     CloseHandle(mapping);
+    CloseHandle(parent);
     return valid && position == kBlockCount;
 }
 
@@ -230,10 +248,16 @@ bool produce()
     const DWORD length = GetModuleFileNameW(nullptr, executable.data(),
                                             static_cast<DWORD>(executable.size()));
     if (length == 0 || length >= executable.size())
+    {
+        CloseHandle(ready);
+        UnmapViewOfFile(shared);
+        CloseHandle(mapping);
         return false;
+    }
 
     const std::wstring command = quote(executable.data()) + L" --consume " +
-                                 quote(mappingName) + L" " + quote(readyName);
+                                 quote(mappingName) + L" " + quote(readyName) + L" " +
+                                 std::to_wstring(GetCurrentProcessId());
     STARTUPINFOW startup { sizeof(startup) };
     PROCESS_INFORMATION process {};
     std::wstring mutableCommand = command;
@@ -297,8 +321,14 @@ bool produce()
 
 int wmain(int argc, wchar_t** argv)
 {
-    if (argc == 4 && std::wcscmp(argv[1], L"--consume") == 0)
-        return consume(argv[2], argv[3]) ? 0 : 1;
+    if (argc == 5 && std::wcscmp(argv[1], L"--consume") == 0)
+    {
+        wchar_t* end = nullptr;
+        const unsigned long parentPid = std::wcstoul(argv[4], &end, 10);
+        if (!end || *end != L'\\0' || parentPid == 0 || parentPid > MAXDWORD)
+            return 2;
+        return consume(argv[2], argv[3], static_cast<DWORD>(parentPid)) ? 0 : 1;
+    }
 
     if (argc != 1)
     {
