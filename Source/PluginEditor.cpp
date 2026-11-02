@@ -22,8 +22,14 @@ VoiceStudioAudioProcessorEditor::VoiceStudioAudioProcessorEditor(VoiceStudioAudi
     statusLabel.setColour(juce::Label::textColourId, juce::Colour(0xffa9c7ae));
     statusLabel.setJustificationType(juce::Justification::centred);
 
-    for (auto* c : { static_cast<juce::Component*>(&aiButton), &dspButton, &highPassButton, &presenceButton, &compressorButton, &outputGainSlider, &outputGainLabel, &statusLabel })
-        addAndMakeVisible(c);
+    addAndMakeVisible(aiButton);
+    addAndMakeVisible(dspButton);
+    addAndMakeVisible(highPassButton);
+    addAndMakeVisible(presenceButton);
+    addAndMakeVisible(compressorButton);
+    addAndMakeVisible(outputGainSlider);
+    addAndMakeVisible(outputGainLabel);
+    addAndMakeVisible(statusLabel);
 }
 
 void VoiceStudioAudioProcessorEditor::paint(juce::Graphics& g)
