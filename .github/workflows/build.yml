@@ -73,6 +73,9 @@ jobs:
       - name: Build standalone Windows Worker and controller integration test
         run: cmake --build build --config Release --target VoiceStudioWorker VoiceStudioWindowsWorkerControllerTest
 
+      - name: Build Windows audio shared-memory mapping test
+        run: cmake --build build --config Release --target VoiceStudioWindowsAudioBlockMappingTest
+
       - name: Build Windows Worker process supervisor test
         run: cmake --build build --config Release --target VoiceStudioWindowsWorkerProcessTest
 
