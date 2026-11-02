@@ -42,24 +42,74 @@ static_assert(alignof(Slot) >= 8, "Interlocked sequence must be 8-byte aligned")
 static_assert(offsetof(Slot, sequence) % 8 == 0, "Sequence offset must be aligned");
 static_assert(std::is_standard_layout<SharedRegion>::value, "Shared ABI must be standard layout");
 
+class UniqueHandle
+{
+public:
+    UniqueHandle() = default;
+    explicit UniqueHandle(HANDLE value) noexcept : value_(value) {}
+    ~UniqueHandle() { reset(); }
+    UniqueHandle(const UniqueHandle&) = delete;
+    UniqueHandle& operator=(const UniqueHandle&) = delete;
+    UniqueHandle(UniqueHandle&& other) noexcept : value_(other.release()) {}
+    UniqueHandle& operator=(UniqueHandle&& other) noexcept
+    {
+        if (this != &other) reset(other.release());
+        return *this;
+    }
+    HANDLE get() const noexcept { return value_; }
+    explicit operator bool() const noexcept { return value_ != nullptr && value_ != INVALID_HANDLE_VALUE; }
+    HANDLE release() noexcept { HANDLE result = value_; value_ = nullptr; return result; }
+    void reset(HANDLE value = nullptr) noexcept
+    {
+        if (value_ && value_ != INVALID_HANDLE_VALUE) CloseHandle(value_);
+        value_ = value;
+    }
+private:
+    HANDLE value_ = nullptr;
+};
+
+template <typename T>
+class UniqueLocal
+{
+public:
+    UniqueLocal() = default;
+    explicit UniqueLocal(T* value) noexcept : value_(value) {}
+    ~UniqueLocal() { reset(); }
+    UniqueLocal(const UniqueLocal&) = delete;
+    UniqueLocal& operator=(const UniqueLocal&) = delete;
+    UniqueLocal(UniqueLocal&& other) noexcept : value_(other.release()) {}
+    UniqueLocal& operator=(UniqueLocal&& other) noexcept
+    {
+        if (this != &other) reset(other.release());
+        return *this;
+    }
+    T* get() const noexcept { return value_; }
+    T* release() noexcept { T* result = value_; value_ = nullptr; return result; }
+    void reset(T* value = nullptr) noexcept
+    {
+        if (value_) LocalFree(value_);
+        value_ = value;
+    }
+private:
+    T* value_ = nullptr;
+};
+
 struct Security
 {
-    PSECURITY_DESCRIPTOR descriptor = nullptr;
+    UniqueLocal<void> descriptor;
     SECURITY_ATTRIBUTES attributes { sizeof(SECURITY_ATTRIBUTES), nullptr, FALSE };
 
     bool initialize()
     {
-        HANDLE token = nullptr;
-        if (!OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &token))
+        HANDLE rawToken = nullptr;
+        if (!OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &rawToken))
             return false;
+        UniqueHandle token(rawToken);
 
         DWORD bytes = 0;
-        GetTokenInformation(token, TokenUser, nullptr, 0, &bytes);
+        GetTokenInformation(token.get(), TokenUser, nullptr, 0, &bytes);
         if (GetLastError() != ERROR_INSUFFICIENT_BUFFER || bytes == 0)
-        {
-            CloseHandle(token);
             return false;
-        }
 
         // TOKEN_USER contains pointers and must be suitably aligned. A byte
         // string only guarantees char alignment, so use max_align_t storage.
@@ -68,29 +118,23 @@ struct Security
             sizeof(std::max_align_t);
         std::vector<std::max_align_t> storage(wordCount);
         auto* user = reinterpret_cast<TOKEN_USER*>(storage.data());
-        const bool queried = GetTokenInformation(token, TokenUser, user, bytes, &bytes) != FALSE;
-        CloseHandle(token);
-        if (!queried)
+        if (!GetTokenInformation(token.get(), TokenUser, user, bytes, &bytes))
             return false;
 
-        LPWSTR sidText = nullptr;
-        if (!ConvertSidToStringSidW(user->User.Sid, &sidText))
+        LPWSTR rawSidText = nullptr;
+        if (!ConvertSidToStringSidW(user->User.Sid, &rawSidText))
             return false;
+        UniqueLocal<wchar_t> sidText(rawSidText);
 
-        const std::wstring sddl = L"D:P(A;;GA;;;" + std::wstring(sidText) + L")(A;;GA;;;SY)";
-        LocalFree(sidText);
+        const std::wstring sddl = L"D:P(A;;GA;;;" + std::wstring(sidText.get()) + L")(A;;GA;;;SY)";
+        PSECURITY_DESCRIPTOR rawDescriptor = nullptr;
         if (!ConvertStringSecurityDescriptorToSecurityDescriptorW(
-                sddl.c_str(), SDDL_REVISION_1, &descriptor, nullptr))
+                sddl.c_str(), SDDL_REVISION_1, &rawDescriptor, nullptr))
             return false;
 
-        attributes.lpSecurityDescriptor = descriptor;
+        descriptor.reset(rawDescriptor);
+        attributes.lpSecurityDescriptor = descriptor.get();
         return true;
-    }
-
-    ~Security()
-    {
-        if (descriptor)
-            LocalFree(descriptor);
     }
 };
 
