@@ -56,7 +56,8 @@ public:
 
     bool acceptStatus(const WorkerStatusMessage& status) noexcept
     {
-        if (!hasValidWorkerStatus(status) || status.generation != generation)
+        if (!hasValidWorkerStatus(status) || status.generation != generation ||
+            status.requestId != requestId)
             return false;
         if (status.heartbeatMonotonicNs < lastHeartbeatNs)
             return false;
@@ -113,6 +114,9 @@ public:
     {
         if (state == WorkerLifecycleState::running)
         {
+            ++requestId;
+            if (requestId == 0)
+                ++requestId;
             cooldownDeadlineNs = nowNs + kCooldownNs;
             state = WorkerLifecycleState::coolingDown;
             return WorkerLifecycleAction::sendStop;
