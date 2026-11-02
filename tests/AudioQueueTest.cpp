@@ -227,6 +227,153 @@ namespace
                "queue drains to empty after sustained producer overload");
     }
 
+    void testConsumerStopAndRestart()
+    {
+        using Block = voice_studio::AudioBlock<4, 1>;
+        voice_studio::SpscQueue<Block, 8> queue;
+        std::atomic<bool> failed { false };
+
+        const auto pushSequence = [&queue](std::uint64_t sequence)
+        {
+            Block block;
+            block.frames = 4;
+            block.channels = 1;
+            block.sequence = sequence;
+            for (std::size_t frame = 0; frame < 4; ++frame)
+                block.at(0, frame) = static_cast<float>(sequence);
+            return queue.tryPush(block);
+        };
+
+        bool initialPushesSucceeded = true;
+        for (std::uint64_t sequence = 0; sequence < 8; ++sequence)
+            initialPushesSucceeded = pushSequence(sequence) && initialPushesSucceeded;
+        expect(initialPushesSucceeded, "producer fills queue before first consumer session");
+
+        std::thread firstConsumer([&]
+        {
+            Block block;
+            for (std::uint64_t expected = 0; expected < 4; ++expected)
+            {
+                if (!queue.tryPop(block) || block.sequence != expected ||
+                    block.at(0, 0) != static_cast<float>(expected))
+                    failed.store(true, std::memory_order_relaxed);
+            }
+        });
+        firstConsumer.join();
+
+        bool secondPushesSucceeded = true;
+        for (std::uint64_t sequence = 8; sequence < 12; ++sequence)
+            secondPushesSucceeded = pushSequence(sequence) && secondPushesSucceeded;
+        expect(secondPushesSucceeded,
+               "producer continues after first consumer thread has stopped");
+
+        std::thread restartedConsumer([&]
+        {
+            Block block;
+            for (std::uint64_t expected = 4; expected < 12; ++expected)
+            {
+                if (!queue.tryPop(block) || block.sequence != expected ||
+                    block.frames != 4 || block.channels != 1 ||
+                    block.at(0, 3) != static_cast<float>(expected))
+                    failed.store(true, std::memory_order_relaxed);
+            }
+        });
+        restartedConsumer.join();
+
+        expect(!failed.load(std::memory_order_relaxed),
+               "restarted consumer receives remaining and newly queued blocks in FIFO order");
+        expect(queue.approximateSize() == 0,
+               "queue is empty after consumer stop and restart test");
+    }
+
+    void testLongRunningProducerConsumerImbalance()
+    {
+        constexpr std::uint64_t attempts = 2'000'000;
+        using Block = voice_studio::AudioBlock<4, 1>;
+        voice_studio::SpscQueue<Block, 16> queue;
+        std::atomic<bool> consumerMayStart { false };
+        std::atomic<bool> producerDone { false };
+        std::atomic<std::uint64_t> accepted { 0 };
+        std::atomic<std::uint64_t> rejected { 0 };
+        std::atomic<std::uint64_t> consumed { 0 };
+        std::atomic<bool> failed { false };
+
+        std::thread consumer([&]
+        {
+            while (!consumerMayStart.load(std::memory_order_acquire))
+                std::this_thread::yield();
+
+            Block block;
+            std::uint64_t previous = 0;
+            bool havePrevious = false;
+            for (;;)
+            {
+                if (queue.tryPop(block))
+                {
+                    const float marker = static_cast<float>(block.sequence % 8192);
+                    if (block.frames != 4 || block.channels != 1 ||
+                        block.at(0, 0) != marker || block.at(0, 3) != marker ||
+                        (havePrevious && block.sequence <= previous))
+                        failed.store(true, std::memory_order_relaxed);
+
+                    previous = block.sequence;
+                    havePrevious = true;
+                    consumed.fetch_add(1, std::memory_order_relaxed);
+                    for (int delay = 0; delay < 8; ++delay)
+                        std::this_thread::yield();
+                }
+                else if (producerDone.load(std::memory_order_acquire))
+                {
+                    break;
+                }
+                else
+                {
+                    std::this_thread::yield();
+                }
+            }
+        });
+
+        std::thread producer([&]
+        {
+            for (std::uint64_t sequence = 0; sequence < attempts; ++sequence)
+            {
+                Block block;
+                block.frames = 4;
+                block.channels = 1;
+                block.sequence = sequence;
+                const float marker = static_cast<float>(sequence % 8192);
+                for (std::size_t frame = 0; frame < 4; ++frame)
+                    block.at(0, frame) = marker;
+
+                if (queue.tryPush(block))
+                    accepted.fetch_add(1, std::memory_order_relaxed);
+                else
+                    rejected.fetch_add(1, std::memory_order_relaxed);
+
+                if (sequence == 15)
+                    consumerMayStart.store(true, std::memory_order_release);
+            }
+
+            producerDone.store(true, std::memory_order_release);
+            consumerMayStart.store(true, std::memory_order_release);
+        });
+
+        producer.join();
+        consumer.join();
+
+        expect(rejected.load(std::memory_order_relaxed) > 0,
+               "long-running imbalance repeatedly exercises bounded queue overflow");
+        expect(consumed.load(std::memory_order_relaxed) == accepted.load(std::memory_order_relaxed),
+               "long-running consumer drains all accepted blocks");
+        expect(accepted.load(std::memory_order_relaxed) +
+                   rejected.load(std::memory_order_relaxed) == attempts,
+               "long-running producer attempts are fully accounted for");
+        expect(!failed.load(std::memory_order_relaxed),
+               "long-running imbalance preserves accepted block data and order");
+        expect(queue.approximateSize() == 0,
+               "long-running imbalance leaves queue empty");
+    }
+
     void testConcurrentProducerConsumer()
     {
         constexpr std::uint64_t blockCount = 1'000'000;
@@ -290,6 +437,8 @@ int main()
     testRepeatedOverflowDoesNotOverwrite();
     testSingleThreadedBehavior();
     testSustainedProducerFasterThanConsumer();
+    testConsumerStopAndRestart();
+    testLongRunningProducerConsumerImbalance();
     testConcurrentProducerConsumer();
 
     if (failures != 0)
