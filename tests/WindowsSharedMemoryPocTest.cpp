@@ -536,7 +536,7 @@ int wmain(int argc, wchar_t** argv)
     }
     const int malformedField = malformedHeader ? 1 :
         (malformedSlotSize ? 2 : (malformedSampleCount ? 3 : (malformedReserved ? 4 :
-        (malformedMagic ? 5 : (malformedHeaderSize ? 6 : (malformedSlotCount ? 7 : 0)))));
+        (malformedMagic ? 5 : (malformedHeaderSize ? 6 : (malformedSlotCount ? 7 : 0))))));
     const int corruptMode = corruptFirstBlock ? 1 : (corruptNan ? 2 : (corruptInfinity ? 3 : 0));
     return produce(malformedField, exitAfterReady, terminateAfterReady, terminateDuringTransfer, corruptMode) ? 0 : 1;
 }
