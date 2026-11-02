@@ -44,6 +44,16 @@ struct SharedRegion
     Slot slots[kCapacity];
 };
 static_assert(alignof(Slot) >= 8, "Interlocked sequence must be 8-byte aligned");
+static_assert(alignof(SharedRegion) >= 8, "Shared region must preserve Interlocked alignment");
+static_assert(offsetof(Slot, block) == 8, "Slot block offset is part of the ABI");
+static_assert(offsetof(Slot, samples) == 16, "Slot payload offset is part of the ABI");
+static_assert(sizeof(Slot) == 16 + sizeof(float) * kSamples, "Slot size is part of the ABI");
+static_assert(offsetof(SharedRegion, magic) == 0, "Header magic offset is part of the ABI");
+static_assert(offsetof(SharedRegion, version) == 8, "Header version offset is part of the ABI");
+static_assert(offsetof(SharedRegion, reserved) == 28, "Header reserved offset is part of the ABI");
+static_assert(offsetof(SharedRegion, slots) == 32, "Header size is part of the ABI");
+static_assert(std::is_trivially_copyable<Slot>::value, "Slot ABI must be trivially copyable");
+static_assert(std::is_trivially_copyable<SharedRegion>::value, "Shared ABI must be trivially copyable");
 static_assert(offsetof(Slot, sequence) % 8 == 0, "Sequence offset must be aligned");
 static_assert(std::is_standard_layout<Slot>::value, "Slot ABI must be standard layout");
 static_assert(std::is_standard_layout<SharedRegion>::value, "Shared ABI must be standard layout");
@@ -329,6 +339,9 @@ bool produce(int malformedHeaderField, bool exitAfterReady, bool terminateAfterR
     if (malformedHeaderField == 2) shared->slotSize = 0;
     if (malformedHeaderField == 3) shared->sampleCount = 0;
     if (malformedHeaderField == 4) shared->reserved = 0xFFFFFFFFu;
+    if (malformedHeaderField == 5) shared->magic ^= 1u;
+    if (malformedHeaderField == 6) shared->headerSize = 0;
+    if (malformedHeaderField == 7) shared->slotCount = 0;
     for (std::uint64_t i = 0; i < kCapacity; ++i)
         InterlockedExchange64(&shared->slots[i].sequence, static_cast<LONG64>(i));
 
@@ -489,6 +502,9 @@ int wmain(int argc, wchar_t** argv)
     const bool malformedSampleCount = argc == 2 && std::wcscmp(argv[1], L"--malformed-sample-count") == 0;
     const bool malformedReserved = argc == 2 && std::wcscmp(argv[1], L"--malformed-reserved") == 0;
     const bool corruptNan = argc == 2 && std::wcscmp(argv[1], L"--corrupt-nan") == 0;
+    const bool malformedMagic = argc == 2 && std::wcscmp(argv[1], L"--malformed-magic") == 0;
+    const bool malformedHeaderSize = argc == 2 && std::wcscmp(argv[1], L"--malformed-header-size") == 0;
+    const bool malformedSlotCount = argc == 2 && std::wcscmp(argv[1], L"--malformed-slot-count") == 0;
     const bool corruptInfinity = argc == 2 && std::wcscmp(argv[1], L"--corrupt-infinity") == 0;
     const bool exitAfterReady = argc == 2 &&
         std::wcscmp(argv[1], L"--exit-after-ready") == 0;
@@ -501,7 +517,8 @@ int wmain(int argc, wchar_t** argv)
     const bool restartAfterCrash = argc == 2 &&
         std::wcscmp(argv[1], L"--restart-after-crash") == 0;
     if (argc > 2 || (argc == 2 &&
-        !malformedHeader && !malformedSlotSize && !malformedSampleCount && !malformedReserved && !corruptNan && !corruptInfinity && !exitAfterReady && !terminateAfterReady &&
+        !malformedHeader && !malformedSlotSize && !malformedSampleCount && !malformedReserved &&
+        !malformedMagic && !malformedHeaderSize && !malformedSlotCount && !corruptNan && !corruptInfinity && !exitAfterReady && !terminateAfterReady &&
         !terminateDuringTransfer && !corruptFirstBlock && !restartAfterCrash))
     {
         std::fwprintf(stderr, L"Usage: VoiceStudioSharedMemoryPocTest.exe [--malformed-header|--exit-after-ready|--terminate-after-ready|--terminate-during-transfer|--corrupt-first-block|--restart-after-crash]\n");
@@ -517,7 +534,9 @@ int wmain(int argc, wchar_t** argv)
         std::wprintf(L"PASS: fresh shared-memory session started after worker crash\\n");
         return 0;
     }
-    const int malformedField = malformedHeader ? 1 : (malformedSlotSize ? 2 : (malformedSampleCount ? 3 : (malformedReserved ? 4 : 0)));
+    const int malformedField = malformedHeader ? 1 :
+        (malformedSlotSize ? 2 : (malformedSampleCount ? 3 : (malformedReserved ? 4 :
+        (malformedMagic ? 5 : (malformedHeaderSize ? 6 : (malformedSlotCount ? 7 : 0)))));
     const int corruptMode = corruptFirstBlock ? 1 : (corruptNan ? 2 : (corruptInfinity ? 3 : 0));
     return produce(malformedField, exitAfterReady, terminateAfterReady, terminateDuringTransfer, corruptMode) ? 0 : 1;
 }
