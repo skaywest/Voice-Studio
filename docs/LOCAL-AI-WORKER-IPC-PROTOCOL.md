@@ -169,3 +169,8 @@ The following remain intentionally undecided:
 - model format and GPU runtime packaging.
 
 These decisions require a reviewed prototype and measurements. This document does not authorize installation or changes to the user's PC.
+
+
+## Related transport design
+
+The Windows-specific shared-memory ABI proposal is documented separately in [WINDOWS-SHARED-MEMORY-TRANSPORT-DRAFT.md](WINDOWS-SHARED-MEMORY-TRANSPORT-DRAFT.md). It remains a design draft and does not authorize implementation or changes to the user's PC.
