@@ -271,9 +271,17 @@ bool produce()
     }
 
     bool ok = WaitForSingleObject(ready, kTimeoutMs) == WAIT_OBJECT_0;
+    const ULONGLONG transferDeadline = GetTickCount64() + kTimeoutMs;
     std::uint64_t position = 0;
     while (ok && position < kBlockCount)
     {
+        if (GetTickCount64() >= transferDeadline ||
+            WaitForSingleObject(process.hProcess, 0) != WAIT_TIMEOUT)
+        {
+            ok = false;
+            break;
+        }
+
         Slot& slot = shared->slots[position % kCapacity];
         const auto sequence = static_cast<std::uint64_t>(
             InterlockedCompareExchange64(&slot.sequence, 0, 0));
