@@ -99,7 +99,6 @@ void testRejectsNonFiniteSamples()
     slot.samples[0] = std::numeric_limits<float>::infinity();
     CHECK(!hasFiniteAudioBlockPayload(slot));
 }
-}
 
 int main()
 {
