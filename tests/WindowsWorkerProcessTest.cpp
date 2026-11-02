@@ -1,4 +1,5 @@
 #include "AudioIpc/WindowsWorkerProcess.h"
+#include "AudioIpc/WindowsWorkerController.h"
 
 #include <windows.h>
 
@@ -18,6 +19,13 @@ int wmain(int argc, wchar_t** argv)
     const DWORD length = GetModuleFileNameW(nullptr, executable, MAX_PATH);
     if (length == 0 || length >= MAX_PATH)
         return 1;
+
+    // Compile and instantiate the integrated controller in the Windows CI build.
+    // It remains inactive here; the dedicated end-to-end protocol test follows.
+    voice_studio::ipc::WindowsWorkerController controller;
+    if (controller.audioConversionAvailable() ||
+        controller.currentState() != voice_studio::ipc::WorkerLifecycleState::disabled)
+        return 8;
 
     voice_studio::ipc::WindowsWorkerProcess worker;
     if (!worker.launch(executable, L"--worker-child"))
