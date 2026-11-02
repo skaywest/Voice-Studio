@@ -13,6 +13,7 @@ on:
       - "docs/**"
       - "Source/**"
       - "tests/**"
+      - "tools/**"
       - ".github/workflows/build.yml"
 
 permissions:
@@ -24,6 +25,18 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Setup Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          architecture: "x64"
+
+      - name: Test offline RVC environment probe
+        working-directory: tools/rvc_worker_probe
+        run: |
+          python -m unittest -v
+          python probe.py --json
 
       - name: Setup MSVC
         uses: ilammy/msvc-dev-cmd@v1
