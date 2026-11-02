@@ -61,9 +61,9 @@ public:
         ZeroMemory(view, sizeof(*view));
         view->header.magic = kAudioBlockMagic;
         view->header.version = kAudioBlockAbiVersion;
-        view->header.headerSize = sizeof(AudioBlockRegionHeader);
+        view->header.headerSize = static_cast<std::uint32_t>(sizeof(AudioBlockRegionHeader));
         view->header.slotCount = kAudioBlockSlotCount;
-        view->header.slotSize = sizeof(AudioBlockSlot);
+        view->header.slotSize = static_cast<std::uint32_t>(sizeof(AudioBlockSlot));
         view->header.maxFrames = kAudioBlockMaxFrames;
         view->header.maxChannels = kAudioBlockMaxChannels;
         view->header.sampleFormat = kAudioBlockFloat32;
