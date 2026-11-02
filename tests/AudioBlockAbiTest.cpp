@@ -55,7 +55,8 @@ void testHeaderValidation()
 
 void testSupportedBlockShapes()
 {
-    for (const auto frames : { 960u, 1920u, 2880u })
+    constexpr std::uint32_t supportedFrames[] = { 960u, 1920u, 2880u };
+    for (const auto frames : supportedFrames)
     {
         auto slot = validSlot();
         slot.frames = frames;
