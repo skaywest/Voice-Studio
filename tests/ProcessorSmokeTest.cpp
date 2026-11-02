@@ -69,7 +69,7 @@ int main()
             finite = finite && std::isfinite(buffer.getSample(channel, sample));
     expect(finite, "enabled DSP produces only finite samples");
 
-    // Verify the output gain numerically with all tone/dynamics stages disabled.
+    // Verify that gain ramps smoothly and reaches its target after the 20 ms ramp.
     setParameter(processor, "highPass", 0.0f);
     setParameter(processor, "presence", 0.0f);
     setParameter(processor, "compressor", 0.0f);
@@ -81,12 +81,25 @@ int main()
         for (int sample = 0; sample < gainBuffer.getNumSamples(); ++sample)
             gainBuffer.setSample(channel, sample, 0.1f);
     processor.processBlock(gainBuffer, midi);
+
     const float expectedGain = juce::Decibels::decibelsToGain(6.0f);
-    bool gainCorrect = true;
-    for (int channel = 0; channel < gainBuffer.getNumChannels(); ++channel)
-        for (int sample = 0; sample < gainBuffer.getNumSamples(); ++sample)
-            gainCorrect = gainCorrect && std::abs(gainBuffer.getSample(channel, sample) - 0.1f * expectedGain) < 0.0001f;
-    expect(gainCorrect, "smoothed output gain reaches the requested +6 dB without a discontinuous step");
+    const float expectedOutput = 0.1f * expectedGain;
+    bool gainRampSmooth = true;
+    for (int sample = 1; sample < gainBuffer.getNumSamples(); ++sample)
+    {
+        const float previous = gainBuffer.getSample(0, sample - 1);
+        const float current = gainBuffer.getSample(0, sample);
+        gainRampSmooth = gainRampSmooth && current + 0.000001f >= previous;
+        gainRampSmooth = gainRampSmooth && std::abs(current - previous) < 0.001f;
+    }
+    expect(gainRampSmooth, "output gain follows a smooth ramp without a discontinuous step");
+
+    bool gainReachedTarget = true;
+    for (int sample = 1024; sample < gainBuffer.getNumSamples(); ++sample)
+        gainReachedTarget = gainReachedTarget &&
+            std::abs(gainBuffer.getSample(0, sample) - expectedOutput) < 0.0001f;
+    expect(gainReachedTarget, "smoothed output gain reaches the requested +6 dB target");
+
     bool stereoGainLinked = true;
     for (int sample = 0; sample < gainBuffer.getNumSamples(); ++sample)
         stereoGainLinked = stereoGainLinked &&
