@@ -89,7 +89,8 @@ inline bool hasValidAudioBlockHeader(const AudioBlockRegionHeader& header) noexc
 
 inline bool hasValidAudioBlockMetadata(const AudioBlockSlot& slot) noexcept
 {
-    if (slot.state != static_cast<std::int32_t>(AudioBlockSlotState::ready) ||
+    const auto state = static_cast<AudioBlockSlotState>(slot.state);
+    if ((state != AudioBlockSlotState::ready && state != AudioBlockSlotState::reading) ||
         slot.flags != kAudioBlockKnownFlags ||
         slot.sequence == 0 || slot.generation == 0 || slot.deadlineMonotonicNs == 0 ||
         slot.sampleRate < 8000 || slot.sampleRate > 192000 ||
