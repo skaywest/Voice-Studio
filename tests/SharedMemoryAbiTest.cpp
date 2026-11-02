@@ -10,7 +10,7 @@ void check(bool condition, const char* expression, int line)
 {
     if (!condition)
     {
-        std::fprintf(stderr, "CHECK failed at line %d: %s\\n", line, expression);
+        std::fprintf(stderr, "CHECK failed at line %d: %s\n", line, expression);
         std::abort();
     }
 }
