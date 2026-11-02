@@ -109,7 +109,7 @@ std::uint64_t expectedSample(std::uint64_t block, std::size_t index)
     return (block * 131u + index * 17u) & 0xffffu;
 }
 
-int consume(const wchar_t* mappingName, const wchar_t* readyName, DWORD parentPid)
+int consume(const wchar_t* mappingName, const wchar_t* readyName, DWORD parentPid, bool exitAfterReady)
 {
     HANDLE parent = OpenProcess(SYNCHRONIZE, FALSE, parentPid);
     if (!parent)
@@ -148,6 +148,15 @@ int consume(const wchar_t* mappingName, const wchar_t* readyName, DWORD parentPi
         CloseHandle(mapping);
         CloseHandle(parent);
         return 14;
+    }
+
+    if (exitAfterReady)
+    {
+        UnmapViewOfFile(shared);
+        CloseHandle(ready);
+        CloseHandle(mapping);
+        CloseHandle(parent);
+        return 20;
     }
 
     const ULONGLONG deadline = GetTickCount64() + kTimeoutMs;
@@ -206,7 +215,7 @@ std::wstring quote(const std::wstring& value)
     return L"\"" + value + L"\"";
 }
 
-bool produce()
+bool produce(bool malformedHeader, bool exitAfterReady)
 {
     Security security;
     if (!security.initialize())
@@ -238,7 +247,7 @@ bool produce()
 
     ZeroMemory(shared, sizeof(*shared));
     shared->magic = kMagic;
-    shared->version = 1;
+    shared->version = malformedHeader ? 999u : 1u;
     shared->slotCount = static_cast<std::uint32_t>(kCapacity);
     for (std::uint64_t i = 0; i < kCapacity; ++i)
         InterlockedExchange64(&shared->slots[i].sequence, static_cast<LONG64>(i));
@@ -264,7 +273,8 @@ bool produce()
 
     const std::wstring command = quote(executable.data()) + L" --consume " +
                                  quote(mappingName) + L" " + quote(readyName) + L" " +
-                                 std::to_wstring(GetCurrentProcessId());
+                                 std::to_wstring(GetCurrentProcessId()) +
+                                 (exitAfterReady ? L" --exit-after-ready" : L"");
     STARTUPINFOW startup { sizeof(startup) };
     PROCESS_INFORMATION process {};
     std::wstring mutableCommand = command;
@@ -277,10 +287,12 @@ bool produce()
         return false;
     }
 
-    bool ok = WaitForSingleObject(ready, kTimeoutMs) == WAIT_OBJECT_0;
+    HANDLE handshakeHandles[] { ready, process.hProcess };
+    const DWORD handshake = WaitForMultipleObjects(2, handshakeHandles, FALSE, kTimeoutMs);
+    bool ok = handshake == WAIT_OBJECT_0;
     const ULONGLONG transferDeadline = GetTickCount64() + kTimeoutMs;
     std::uint64_t position = 0;
-    while (ok && position < kBlockCount)
+    while (ok && !malformedHeader && !exitAfterReady && position < kBlockCount)
     {
         if (GetTickCount64() >= transferDeadline ||
             WaitForSingleObject(process.hProcess, 0) != WAIT_TIMEOUT)
@@ -343,19 +355,27 @@ bool produce()
 
 int wmain(int argc, wchar_t** argv)
 {
-    if (argc == 5 && std::wcscmp(argv[1], L"--consume") == 0)
+    if ((argc == 5 || argc == 6) && std::wcscmp(argv[1], L"--consume") == 0)
     {
         wchar_t* end = nullptr;
         const unsigned long parentPid = std::wcstoul(argv[4], &end, 10);
         if (!end || *end != L'\0' || parentPid == 0 || parentPid > MAXDWORD)
             return 2;
-        return consume(argv[2], argv[3], static_cast<DWORD>(parentPid));
+        const bool exitAfterReady = argc == 6 &&
+            std::wcscmp(argv[5], L"--exit-after-ready") == 0;
+        if (argc == 6 && !exitAfterReady)
+            return 2;
+        return consume(argv[2], argv[3], static_cast<DWORD>(parentPid), exitAfterReady);
     }
 
-    if (argc != 1)
+    const bool malformedHeader = argc == 2 &&
+        std::wcscmp(argv[1], L"--malformed-header") == 0;
+    const bool exitAfterReady = argc == 2 &&
+        std::wcscmp(argv[1], L"--exit-after-ready") == 0;
+    if (argc > 2 || (argc == 2 && !malformedHeader && !exitAfterReady))
     {
-        std::fwprintf(stderr, L"Usage: VoiceStudioSharedMemoryPocTest.exe\n");
+        std::fwprintf(stderr, L"Usage: VoiceStudioSharedMemoryPocTest.exe [--malformed-header|--exit-after-ready]\n");
         return 2;
     }
-    return produce() ? 0 : 1;
+    return produce(malformedHeader, exitAfterReady) ? 0 : 1;
 }
