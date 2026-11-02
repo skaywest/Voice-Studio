@@ -5,8 +5,10 @@ on:
   push:
     branches:
       - main
+      - experiment/no-network-juce
     paths:
       - "CMakeLists.txt"
+      - "cmake/**"
       - "README.md"
       - "Source/**"
       - ".github/workflows/build.yml"
@@ -32,8 +34,23 @@ jobs:
       - name: Build VST3
         run: cmake --build build --config Release --target VoiceStudio_VST3
 
-      - name: Upload VST3
+      - name: Audit network imports
+        shell: pwsh
+        run: |
+          $plugin = Get-ChildItem "build/VoiceStudio_artefacts/Release/VST3" -Filter "*.vst3" -Recurse -File | Select-Object -First 1
+          if (-not $plugin) { throw "VST3 binary not found" }
+          $imports = & dumpbin /nologo /imports $plugin.FullName 2>&1
+          $imports | Out-File -FilePath network-import-audit.txt -Encoding utf8
+          if ($LASTEXITCODE -ne 0) { throw "dumpbin import inspection failed" }
+          if ($imports -match "(?im)^\s*(WININET|WS2_32)\.dll\s*$") {
+            throw "Network DLL import remains in VST3 binary"
+          }
+          Write-Host "PASS: no WININET.dll or WS2_32.dll imports found"
+      
+      - name: Upload VST3 and audit
         uses: actions/upload-artifact@v4
         with:
-          name: Voice-Studio-prototype-Windows-x64
-          path: build/VoiceStudio_artefacts/Release/VST3/
+          name: Voice-Studio-no-network-experiment-Windows-x64
+          path: |
+            build/VoiceStudio_artefacts/Release/VST3/
+            network-import-audit.txt
