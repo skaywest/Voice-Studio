@@ -24,6 +24,8 @@ file(READ "${events_cpp}" events_text)
 foreach(fragment
     "#include \"interprocess/juce_InterprocessConnection.cpp\""
     "#include \"interprocess/juce_InterprocessConnectionServer.cpp\""
+    "#include \"interprocess/juce_ChildProcessManager.cpp\""
+    "#include \"interprocess/juce_ConnectedChildProcess.cpp\""
     "#include \"interprocess/juce_NetworkServiceDiscovery.cpp\"")
     string(FIND "${events_text}" "${fragment}" pos)
     if(pos EQUAL -1)
