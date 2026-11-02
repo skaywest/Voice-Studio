@@ -45,6 +45,29 @@ public:
             return false;
         pipe = handle;
         connected = false;
+        serverEndpoint = true;
+        return true;
+    }
+
+    bool connectClient(const std::wstring& pipeName, DWORD timeoutMs = 3000) noexcept
+    {
+        if (pipe != INVALID_HANDLE_VALUE || pipeName.empty())
+            return false;
+        if (!WaitNamedPipeW(pipeName.c_str(), timeoutMs))
+            return false;
+        HANDLE handle = CreateFileW(pipeName.c_str(), GENERIC_READ | GENERIC_WRITE,
+                                    0, nullptr, OPEN_EXISTING, 0, nullptr);
+        if (handle == INVALID_HANDLE_VALUE)
+            return false;
+        DWORD mode = PIPE_READMODE_MESSAGE;
+        if (!SetNamedPipeHandleState(handle, &mode, nullptr, nullptr))
+        {
+            CloseHandle(handle);
+            return false;
+        }
+        pipe = handle;
+        connected = true;
+        serverEndpoint = false;
         return true;
     }
 
@@ -106,7 +129,7 @@ public:
             // Do not FlushFileBuffers here: it can block until the peer reads
             // every buffered byte. Disconnect must remain bounded by the
             // control thread's own policy, not by an unresponsive Worker.
-            if (connected)
+            if (connected && serverEndpoint)
                 DisconnectNamedPipe(pipe);
         }
         connected = false;
@@ -143,5 +166,6 @@ private:
 
     HANDLE pipe = INVALID_HANDLE_VALUE;
     bool connected = false;
+    bool serverEndpoint = false;
 };
 } // namespace voice_studio::ipc
