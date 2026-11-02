@@ -113,13 +113,13 @@ bool consume(const wchar_t* mappingName, const wchar_t* readyName, DWORD parentP
 {
     HANDLE parent = OpenProcess(SYNCHRONIZE, FALSE, parentPid);
     if (!parent)
-        return false;
+        return 10;
 
     HANDLE mapping = OpenFileMappingW(FILE_MAP_ALL_ACCESS, FALSE, mappingName);
     if (!mapping)
     {
         CloseHandle(parent);
-        return false;
+        return 11;
     }
 
     auto* shared = static_cast<SharedRegion*>(
@@ -128,7 +128,7 @@ bool consume(const wchar_t* mappingName, const wchar_t* readyName, DWORD parentP
     {
         CloseHandle(mapping);
         CloseHandle(parent);
-        return false;
+        return 12;
     }
 
     HANDLE ready = OpenEventW(EVENT_MODIFY_STATE, FALSE, readyName);
@@ -139,9 +139,16 @@ bool consume(const wchar_t* mappingName, const wchar_t* readyName, DWORD parentP
         UnmapViewOfFile(shared);
         CloseHandle(mapping);
         CloseHandle(parent);
-        return false;
+        return 13;
     }
-    SetEvent(ready);
+    if (!SetEvent(ready))
+    {
+        CloseHandle(ready);
+        UnmapViewOfFile(shared);
+        CloseHandle(mapping);
+        CloseHandle(parent);
+        return 14;
+    }
 
     const ULONGLONG deadline = GetTickCount64() + kTimeoutMs;
     std::uint64_t position = 0;
@@ -191,7 +198,7 @@ bool consume(const wchar_t* mappingName, const wchar_t* readyName, DWORD parentP
     CloseHandle(ready);
     CloseHandle(mapping);
     CloseHandle(parent);
-    return valid && position == kBlockCount;
+    return valid && position == kBlockCount ? 0 : 15;
 }
 
 std::wstring quote(const std::wstring& value)
@@ -309,7 +316,14 @@ bool produce()
     else
     {
         DWORD exitCode = 1;
-        ok = ok && GetExitCodeProcess(process.hProcess, &exitCode) && exitCode == 0;
+        const BOOL gotExitCode = GetExitCodeProcess(process.hProcess, &exitCode);
+        if (!gotExitCode || exitCode != 0)
+        {
+            std::fwprintf(stderr, L"Consumer failed: GetExitCodeProcess=%u, exitCode=%lu, blocksSent=%llu\\n",
+                          static_cast<unsigned>(gotExitCode), static_cast<unsigned long>(exitCode),
+                          static_cast<unsigned long long>(position));
+            ok = false;
+        }
     }
 
     CloseHandle(process.hThread);
