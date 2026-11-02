@@ -42,7 +42,7 @@ jobs:
       - name: Build audio queue tests
         run: cmake --build build --config Release --target VoiceStudioAudioQueueTest
 
-      - name: Run processor smoke tests
+      - name: Run all registered tests (processor and audio queue)
         run: ctest --test-dir build -C Release --output-on-failure
 
       - name: Audit network imports
