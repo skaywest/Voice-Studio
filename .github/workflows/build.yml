@@ -42,6 +42,9 @@ jobs:
       - name: Build audio queue tests
         run: cmake --build build --config Release --target VoiceStudioAudioQueueTest
 
+      - name: Build shared-memory ABI tests
+        run: cmake --build build --config Release --target VoiceStudioSharedMemoryAbiTest
+
       - name: Build Windows shared-memory process test
         run: cmake --build build --config Release --target VoiceStudioSharedMemoryPocTest
 
