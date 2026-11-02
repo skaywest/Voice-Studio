@@ -89,5 +89,14 @@ if(VOICE_STUDIO_BUILD_SMOKE_TESTS)
         target_link_libraries(VoiceStudioSharedMemoryPocTest PRIVATE bcrypt advapi32)
         add_test(NAME VoiceStudioSharedMemoryPocTest COMMAND VoiceStudioSharedMemoryPocTest)
         set_tests_properties(VoiceStudioSharedMemoryPocTest PROPERTIES TIMEOUT 90)
+        add_test(NAME VoiceStudioSharedMemoryMalformedHeaderTest
+                 COMMAND VoiceStudioSharedMemoryPocTest --malformed-header)
+        add_test(NAME VoiceStudioSharedMemoryWorkerExitTest
+                 COMMAND VoiceStudioSharedMemoryPocTest --exit-after-ready)
+        set_tests_properties(
+            VoiceStudioSharedMemoryPocTest
+            VoiceStudioSharedMemoryMalformedHeaderTest
+            VoiceStudioSharedMemoryWorkerExitTest
+            PROPERTIES TIMEOUT 90)
     endif()
 endif()
