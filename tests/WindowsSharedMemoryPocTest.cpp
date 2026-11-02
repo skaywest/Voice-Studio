@@ -109,7 +109,8 @@ std::uint64_t expectedSample(std::uint64_t block, std::size_t index)
     return (block * 131u + index * 17u) & 0xffffu;
 }
 
-int consume(const wchar_t* mappingName, const wchar_t* readyName, DWORD parentPid, bool exitAfterReady)
+int consume(const wchar_t* mappingName, const wchar_t* readyName, const wchar_t* progressName,
+            DWORD parentPid, bool exitAfterReady)
 {
     HANDLE parent = OpenProcess(SYNCHRONIZE, FALSE, parentPid);
     if (!parent)
@@ -148,8 +149,18 @@ int consume(const wchar_t* mappingName, const wchar_t* readyName, DWORD parentPi
         CloseHandle(parent);
         return 13;
     }
+    HANDLE progress = OpenEventW(EVENT_MODIFY_STATE, FALSE, progressName);
+    if (!progress)
+    {
+        CloseHandle(ready);
+        UnmapViewOfFile(shared);
+        CloseHandle(mapping);
+        CloseHandle(parent);
+        return 17;
+    }
     if (!SetEvent(ready))
     {
+        CloseHandle(progress);
         CloseHandle(ready);
         UnmapViewOfFile(shared);
         CloseHandle(mapping);
@@ -160,6 +171,7 @@ int consume(const wchar_t* mappingName, const wchar_t* readyName, DWORD parentPi
     if (exitAfterReady)
     {
         UnmapViewOfFile(shared);
+        CloseHandle(progress);
         CloseHandle(ready);
         CloseHandle(mapping);
         CloseHandle(parent);
@@ -208,9 +220,15 @@ int consume(const wchar_t* mappingName, const wchar_t* readyName, DWORD parentPi
         InterlockedExchange64(&slot.sequence,
                               static_cast<LONG64>(position + kCapacity));
         ++position;
+        if (position == 1 && !SetEvent(progress))
+        {
+            valid = false;
+            break;
+        }
     }
 
     UnmapViewOfFile(shared);
+    CloseHandle(progress);
     CloseHandle(ready);
     CloseHandle(mapping);
     CloseHandle(parent);
@@ -222,7 +240,8 @@ std::wstring quote(const std::wstring& value)
     return L"\"" + value + L"\"";
 }
 
-bool produce(bool malformedHeader, bool exitAfterReady, bool terminateAfterReady)
+bool produce(bool malformedHeader, bool exitAfterReady, bool terminateAfterReady,
+             bool terminateDuringTransfer, bool corruptFirstBlock)
 {
     Security security;
     if (!security.initialize())
@@ -259,9 +278,13 @@ bool produce(bool malformedHeader, bool exitAfterReady, bool terminateAfterReady
     for (std::uint64_t i = 0; i < kCapacity; ++i)
         InterlockedExchange64(&shared->slots[i].sequence, static_cast<LONG64>(i));
 
+    const std::wstring progressName = mappingName + L"_progress";
+    HANDLE progress = CreateEventW(&security.attributes, TRUE, FALSE, progressName.c_str());
     HANDLE ready = CreateEventW(&security.attributes, TRUE, FALSE, readyName.c_str());
-    if (!ready)
+    if (!ready || !progress)
     {
+        if (ready) CloseHandle(ready);
+        if (progress) CloseHandle(progress);
         UnmapViewOfFile(shared);
         CloseHandle(mapping);
         return false;
@@ -273,6 +296,7 @@ bool produce(bool malformedHeader, bool exitAfterReady, bool terminateAfterReady
     if (length == 0 || length >= executable.size())
     {
         CloseHandle(ready);
+        CloseHandle(progress);
         UnmapViewOfFile(shared);
         CloseHandle(mapping);
         return false;
@@ -280,6 +304,7 @@ bool produce(bool malformedHeader, bool exitAfterReady, bool terminateAfterReady
 
     const std::wstring command = quote(executable.data()) + L" --consume " +
                                  quote(mappingName) + L" " + quote(readyName) + L" " +
+                                 quote(progressName) + L" " +
                                  std::to_wstring(GetCurrentProcessId()) +
                                  (exitAfterReady ? L" --exit-after-ready" : L"");
     STARTUPINFOW startup { sizeof(startup) };
@@ -289,6 +314,7 @@ bool produce(bool malformedHeader, bool exitAfterReady, bool terminateAfterReady
                         CREATE_NO_WINDOW, nullptr, nullptr, &startup, &process))
     {
         CloseHandle(ready);
+        CloseHandle(progress);
         UnmapViewOfFile(shared);
         CloseHandle(mapping);
         return false;
@@ -330,9 +356,27 @@ bool produce(bool malformedHeader, bool exitAfterReady, bool terminateAfterReady
         slot.block = position;
         for (std::size_t i = 0; i < kSamples; ++i)
             slot.samples[i] = static_cast<float>(expectedSample(position, i));
+        if (corruptFirstBlock && position == 0)
+            slot.samples[7] += 1.0f;
 
         InterlockedExchange64(&slot.sequence, static_cast<LONG64>(position + 1));
         ++position;
+        if (corruptFirstBlock && position == 1)
+            break;
+        if (terminateDuringTransfer && position == 1)
+        {
+            HANDLE progressHandles[] { progress, process.hProcess };
+            const DWORD progressWait = WaitForMultipleObjects(2, progressHandles, FALSE, kTimeoutMs);
+            if (progressWait == WAIT_OBJECT_0)
+            {
+                if (!TerminateProcess(process.hProcess, 78) ||
+                    WaitForSingleObject(process.hProcess, kTimeoutMs) != WAIT_OBJECT_0)
+                    ok = false;
+            }
+            else
+                ok = false;
+            break;
+        }
     }
 
     const DWORD waitResult = WaitForSingleObject(process.hProcess, kTimeoutMs);
@@ -348,7 +392,9 @@ bool produce(bool malformedHeader, bool exitAfterReady, bool terminateAfterReady
         const BOOL gotExitCode = GetExitCodeProcess(process.hProcess, &exitCode);
         const DWORD expectedExit = malformedHeader ? 13u :
                                    (exitAfterReady ? 20u :
-                                    (terminateAfterReady ? 77u : 0u));
+                                    (terminateAfterReady ? 77u :
+                                     (terminateDuringTransfer ? 78u :
+                                      (corruptFirstBlock ? 15u : 0u))));
         if (!gotExitCode || exitCode != expectedExit)
         {
             std::fwprintf(stderr, L"Consumer exit mismatch: got=%u, exitCode=%lu, expected=%lu, blocksSent=%llu\\n",
@@ -357,7 +403,8 @@ bool produce(bool malformedHeader, bool exitAfterReady, bool terminateAfterReady
                           static_cast<unsigned long long>(position));
             ok = false;
         }
-        else if (malformedHeader || exitAfterReady || terminateAfterReady)
+        else if (malformedHeader || exitAfterReady || terminateAfterReady ||
+                 terminateDuringTransfer || corruptFirstBlock)
         {
             ok = true;
         }
@@ -366,6 +413,7 @@ bool produce(bool malformedHeader, bool exitAfterReady, bool terminateAfterReady
     CloseHandle(process.hThread);
     CloseHandle(process.hProcess);
     CloseHandle(ready);
+    CloseHandle(progress);
     UnmapViewOfFile(shared);
     CloseHandle(mapping);
 
@@ -386,17 +434,17 @@ bool produce(bool malformedHeader, bool exitAfterReady, bool terminateAfterReady
 
 int wmain(int argc, wchar_t** argv)
 {
-    if ((argc == 5 || argc == 6) && std::wcscmp(argv[1], L"--consume") == 0)
+    if ((argc == 6 || argc == 7) && std::wcscmp(argv[1], L"--consume") == 0)
     {
         wchar_t* end = nullptr;
-        const unsigned long parentPid = std::wcstoul(argv[4], &end, 10);
+        const unsigned long parentPid = std::wcstoul(argv[5], &end, 10);
         if (!end || *end != L'\0' || parentPid == 0 || parentPid > MAXDWORD)
             return 2;
-        const bool exitAfterReady = argc == 6 &&
-            std::wcscmp(argv[5], L"--exit-after-ready") == 0;
-        if (argc == 6 && !exitAfterReady)
+        const bool exitAfterReady = argc == 7 &&
+            std::wcscmp(argv[6], L"--exit-after-ready") == 0;
+        if (argc == 7 && !exitAfterReady)
             return 2;
-        return consume(argv[2], argv[3], static_cast<DWORD>(parentPid), exitAfterReady);
+        return consume(argv[2], argv[3], argv[4], static_cast<DWORD>(parentPid), exitAfterReady);
     }
 
     const bool malformedHeader = argc == 2 &&
@@ -405,11 +453,17 @@ int wmain(int argc, wchar_t** argv)
         std::wcscmp(argv[1], L"--exit-after-ready") == 0;
     const bool terminateAfterReady = argc == 2 &&
         std::wcscmp(argv[1], L"--terminate-after-ready") == 0;
+    const bool terminateDuringTransfer = argc == 2 &&
+        std::wcscmp(argv[1], L"--terminate-during-transfer") == 0;
+    const bool corruptFirstBlock = argc == 2 &&
+        std::wcscmp(argv[1], L"--corrupt-first-block") == 0;
     if (argc > 2 || (argc == 2 &&
-        !malformedHeader && !exitAfterReady && !terminateAfterReady))
+        !malformedHeader && !exitAfterReady && !terminateAfterReady &&
+        !terminateDuringTransfer && !corruptFirstBlock))
     {
         std::fwprintf(stderr, L"Usage: VoiceStudioSharedMemoryPocTest.exe [--malformed-header|--exit-after-ready|--terminate-after-ready]\n");
         return 2;
     }
-    return produce(malformedHeader, exitAfterReady, terminateAfterReady) ? 0 : 1;
+    return produce(malformedHeader, exitAfterReady, terminateAfterReady,
+                   terminateDuringTransfer, corruptFirstBlock) ? 0 : 1;
 }
