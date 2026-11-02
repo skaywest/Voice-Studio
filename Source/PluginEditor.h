@@ -7,17 +7,16 @@ public:
     explicit VoiceStudioAudioProcessorEditor(VoiceStudioAudioProcessor&);
     void paint(juce::Graphics&) override;
     void resized() override;
-
 private:
+    void showPage(bool library);
     VoiceStudioAudioProcessor& processor;
-    juce::ToggleButton aiButton { "AI VOICE (NOT IMPLEMENTED)" };
-    juce::ToggleButton dspButton { "ENABLE DSP PROCESSING" };
-    juce::ToggleButton highPassButton { "LOW CUT 80 Hz" };
-    juce::ToggleButton presenceButton { "VOICE PRESENCE +2.5 dB" };
-    juce::ToggleButton compressorButton { "COMPRESSOR 3:1" };
+    juce::TextButton effectsTab { "EFFECTS" }, libraryTab { "VOICE LIBRARY" };
+    juce::ToggleButton aiButton { "AI VOICE (NOT IMPLEMENTED)" }, dspButton { "ENABLE DSP PROCESSING" };
+    juce::ToggleButton highPassButton { "LOW CUT 80 Hz" }, presenceButton { "VOICE PRESENCE +2.5 dB" }, compressorButton { "COMPRESSOR 3:1" };
     juce::Slider outputGainSlider;
-    juce::Label outputGainLabel;
-    juce::Label statusLabel;
+    juce::Label outputGainLabel, statusLabel;
+    juce::Label libraryHeading, libraryDescription, categoryLabel, emptyState, safetyNote;
+    juce::ComboBox categoryBox;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> aiAttachment, dspAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> highPassAttachment, presenceAttachment, compressorAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> outputGainAttachment;
