@@ -87,7 +87,7 @@ void VoiceStudioAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, j
             if (usePresence)
                 sample = eq.processSample(sample);
             if (useCompressor)
-                sample = comp.processSample(ch, sample);
+                sample = comp.processSample(0, sample);
             data[i] = sample * gain;
         }
     }
