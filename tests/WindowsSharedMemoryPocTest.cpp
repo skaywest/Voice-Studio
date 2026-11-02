@@ -109,7 +109,7 @@ std::uint64_t expectedSample(std::uint64_t block, std::size_t index)
     return (block * 131u + index * 17u) & 0xffffu;
 }
 
-bool consume(const wchar_t* mappingName, const wchar_t* readyName, DWORD parentPid)
+int consume(const wchar_t* mappingName, const wchar_t* readyName, DWORD parentPid)
 {
     HANDLE parent = OpenProcess(SYNCHRONIZE, FALSE, parentPid);
     if (!parent)
@@ -349,7 +349,7 @@ int wmain(int argc, wchar_t** argv)
         const unsigned long parentPid = std::wcstoul(argv[4], &end, 10);
         if (!end || *end != L'\0' || parentPid == 0 || parentPid > MAXDWORD)
             return 2;
-        return consume(argv[2], argv[3], static_cast<DWORD>(parentPid)) ? 0 : 1;
+        return consume(argv[2], argv[3], static_cast<DWORD>(parentPid));
     }
 
     if (argc != 1)
