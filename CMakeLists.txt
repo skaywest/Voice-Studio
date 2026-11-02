@@ -74,4 +74,10 @@ if(VOICE_STUDIO_BUILD_SMOKE_TESTS)
         juce::juce_dsp
     )
     add_test(NAME VoiceStudioProcessorSmokeTest COMMAND VoiceStudioProcessorSmokeTest)
+
+    # This queue test is dependency-free and exercises the real-time handoff primitive.
+    add_executable(VoiceStudioAudioQueueTest tests/AudioQueueTest.cpp)
+    target_include_directories(VoiceStudioAudioQueueTest PRIVATE Source)
+    target_compile_features(VoiceStudioAudioQueueTest PRIVATE cxx_std_17)
+    add_test(NAME VoiceStudioAudioQueueTest COMMAND VoiceStudioAudioQueueTest)
 endif()
