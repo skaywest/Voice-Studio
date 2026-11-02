@@ -136,6 +136,97 @@ namespace
         expect(!queue.tryPop(received), "queue is empty after draining");
     }
 
+    void testSustainedProducerFasterThanConsumer()
+    {
+        constexpr std::uint64_t attempts = 250000;
+        using Block = voice_studio::AudioBlock<4, 1>;
+        voice_studio::SpscQueue<Block, 8> queue;
+        std::atomic<bool> consumerMayStart { false };
+        std::atomic<bool> producerDone { false };
+        std::atomic<std::uint64_t> accepted { 0 };
+        std::atomic<std::uint64_t> rejected { 0 };
+        std::atomic<bool> consumerFailed { false };
+        std::uint64_t consumed = 0;
+
+        std::thread consumer([&]
+        {
+            while (!consumerMayStart.load(std::memory_order_acquire))
+                std::this_thread::yield();
+
+            Block block;
+            std::uint64_t previous = 0;
+            bool havePrevious = false;
+            for (;;)
+            {
+                if (queue.tryPop(block))
+                {
+                    const float marker = static_cast<float>(block.sequence % 4096);
+                    if (block.frames != 4 || block.channels != 1 ||
+                        block.at(0, 0) != marker || block.at(0, 3) != marker ||
+                        (havePrevious && block.sequence <= previous))
+                        consumerFailed.store(true, std::memory_order_relaxed);
+
+                    previous = block.sequence;
+                    havePrevious = true;
+                    ++consumed;
+
+                    // Deliberately let the producer get ahead, modelling a
+                    // sustained processing-rate mismatch without sleeping.
+                    for (int delay = 0; delay < 32; ++delay)
+                        std::this_thread::yield();
+                }
+                else if (producerDone.load(std::memory_order_acquire))
+                {
+                    break;
+                }
+                else
+                {
+                    std::this_thread::yield();
+                }
+            }
+        });
+
+        std::thread producer([&]
+        {
+            for (std::uint64_t sequence = 0; sequence < attempts; ++sequence)
+            {
+                Block block;
+                block.frames = 4;
+                block.channels = 1;
+                block.sequence = sequence;
+                const float marker = static_cast<float>(sequence % 4096);
+                for (std::size_t frame = 0; frame < 4; ++frame)
+                    block.at(0, frame) = marker;
+
+                if (queue.tryPush(block))
+                    accepted.fetch_add(1, std::memory_order_relaxed);
+                else
+                    rejected.fetch_add(1, std::memory_order_relaxed);
+
+                if (sequence == 7)
+                    consumerMayStart.store(true, std::memory_order_release);
+            }
+
+            producerDone.store(true, std::memory_order_release);
+            consumerMayStart.store(true, std::memory_order_release);
+        });
+
+        producer.join();
+        consumer.join();
+
+        expect(rejected.load(std::memory_order_relaxed) > 0,
+               "sustained producer overload exercises drop-newest rejection");
+        expect(consumed == accepted.load(std::memory_order_relaxed),
+               "consumer drains every accepted block after producer stops");
+        expect(accepted.load(std::memory_order_relaxed) +
+                   rejected.load(std::memory_order_relaxed) == attempts,
+               "every producer attempt is accounted for as accepted or rejected");
+        expect(!consumerFailed.load(std::memory_order_relaxed),
+               "accepted blocks remain intact and ordered during sustained overload");
+        expect(queue.approximateSize() == 0,
+               "queue drains to empty after sustained producer overload");
+    }
+
     void testConcurrentProducerConsumer()
     {
         constexpr std::uint64_t blockCount = 1'000'000;
@@ -198,6 +289,7 @@ int main()
     testAudioBlockDimensions();
     testRepeatedOverflowDoesNotOverwrite();
     testSingleThreadedBehavior();
+    testSustainedProducerFasterThanConsumer();
     testConcurrentProducerConsumer();
 
     if (failures != 0)
