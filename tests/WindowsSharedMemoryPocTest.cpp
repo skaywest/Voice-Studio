@@ -4,6 +4,7 @@
 #include <sddl.h>
 
 #include <array>
+#include <cstddef>
 #include <cstdint>
 #include <cstdio>
 #include <cwchar>
