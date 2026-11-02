@@ -91,6 +91,7 @@ if(VOICE_STUDIO_BUILD_SMOKE_TESTS)
     # This is a test executable; it is not loaded or launched by the VST3.
     if(WIN32 AND CMAKE_SIZEOF_VOID_P EQUAL 8)
         add_executable(VoiceStudioSharedMemoryPocTest tests/WindowsSharedMemoryPocTest.cpp)
+        target_include_directories(VoiceStudioSharedMemoryPocTest PRIVATE Source)
         target_compile_features(VoiceStudioSharedMemoryPocTest PRIVATE cxx_std_17)
         target_link_libraries(VoiceStudioSharedMemoryPocTest PRIVATE bcrypt advapi32)
         add_test(NAME VoiceStudioSharedMemoryPocTest COMMAND VoiceStudioSharedMemoryPocTest)
