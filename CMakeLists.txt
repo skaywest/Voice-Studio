@@ -105,6 +105,12 @@ if(VOICE_STUDIO_BUILD_SMOKE_TESTS)
     target_compile_features(VoiceStudioWorkerLifecycleTest PRIVATE cxx_std_17)
     add_test(NAME VoiceStudioWorkerLifecycleTest COMMAND VoiceStudioWorkerLifecycleTest)
 
+    # Control-thread facade and lock-free audio availability publication.
+    add_executable(VoiceStudioWorkerControlCoordinatorTest tests/WorkerControlCoordinatorTest.cpp)
+    target_include_directories(VoiceStudioWorkerControlCoordinatorTest PRIVATE Source)
+    target_compile_features(VoiceStudioWorkerControlCoordinatorTest PRIVATE cxx_std_17)
+    add_test(NAME VoiceStudioWorkerControlCoordinatorTest COMMAND VoiceStudioWorkerControlCoordinatorTest)
+
     # Windows-only, standalone cross-process shared-memory proof of concept.
     # This is a test executable; it is not loaded or launched by the VST3.
     if(WIN32 AND CMAKE_SIZEOF_VOID_P EQUAL 8)
