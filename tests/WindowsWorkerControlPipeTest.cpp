@@ -47,6 +47,7 @@ int main()
         return 2;
 
     std::atomic<bool> clientOk{false};
+    std::atomic<bool> keepClientOpen{true};
     std::thread client([&]
     {
         WindowsWorkerControlPipe endpoint;
