@@ -11,9 +11,12 @@ FetchContent_Declare(
 FetchContent_GetProperties(JUCE)
 if(NOT juce_POPULATED)
     FetchContent_Populate(JUCE)
+    # JUCE bootstraps juceaide by reconfiguring its source tree. Keep the JUCE
+    # sources pristine until that bootstrap has completed, then apply the
+    # no-network patch for the Voice Studio module build only.
+    add_subdirectory(${juce_SOURCE_DIR} ${juce_BINARY_DIR} EXCLUDE_FROM_ALL)
     include(cmake/DisableJuceNetworking.cmake)
     add_compile_definitions(JUCE_VOICE_STUDIO_DISABLE_NETWORKING=1)
-    add_subdirectory(${juce_SOURCE_DIR} ${juce_BINARY_DIR} EXCLUDE_FROM_ALL)
 endif()
 
 juce_add_plugin(VoiceStudio
