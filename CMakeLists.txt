@@ -119,6 +119,7 @@ if(VOICE_STUDIO_BUILD_SMOKE_TESTS)
         add_executable(VoiceStudioWindowsWorkerControlPipeTest tests/WindowsWorkerControlPipeTest.cpp)
         target_include_directories(VoiceStudioWindowsWorkerControlPipeTest PRIVATE Source)
         target_compile_features(VoiceStudioWindowsWorkerControlPipeTest PRIVATE cxx_std_17)
+        target_link_libraries(VoiceStudioWindowsWorkerControlPipeTest PRIVATE advapi32)
         add_test(NAME VoiceStudioWindowsWorkerControlPipeTest COMMAND VoiceStudioWindowsWorkerControlPipeTest)
         set_tests_properties(VoiceStudioWindowsWorkerControlPipeTest PROPERTIES TIMEOUT 20)
 
