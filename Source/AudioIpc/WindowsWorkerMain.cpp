@@ -6,6 +6,7 @@
 #endif
 #include <windows.h>
 
+#include "AudioIpc/WindowsAudioBlockMapping.h"
 #include "AudioIpc/WindowsWorkerControlPipe.h"
 
 #include <cerrno>
@@ -49,9 +50,13 @@ WorkerStatusMessage makeStatus(WorkerState state, WorkerResult result,
     return status;
 }
 
-int runWorker(const std::wstring& pipeName, std::uint64_t generation,
-              std::uint64_t requestId) noexcept
+int runWorker(const std::wstring& pipeName, const std::wstring& mappingName,
+              std::uint64_t generation, std::uint64_t requestId) noexcept
 {
+    WindowsAudioBlockMapping audioMapping;
+    if (!audioMapping.openClient(mappingName))
+        return 9;
+
     WindowsWorkerControlPipe pipe;
     if (!pipe.connectClient(pipeName, 5000))
         return 10;
@@ -114,13 +119,13 @@ int runWorker(const std::wstring& pipeName, std::uint64_t generation,
 
 int wmain(int argc, wchar_t** argv)
 {
-    if (argc != 5 || std::wstring(argv[1]) != L"--voice-studio-worker")
+    if (argc != 6 || std::wstring(argv[1]) != L"--voice-studio-worker")
         return 2;
 
     std::uint64_t generation = 0;
     std::uint64_t requestId = 0;
-    if (!parseUint64(argv[3], generation) || !parseUint64(argv[4], requestId))
+    if (!parseUint64(argv[4], generation) || !parseUint64(argv[5], requestId))
         return 3;
 
-    return runWorker(argv[2], generation, requestId);
+    return runWorker(argv[2], argv[3], generation, requestId);
 }
