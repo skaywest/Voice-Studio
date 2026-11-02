@@ -68,6 +68,32 @@ private:
     HANDLE value_ = nullptr;
 };
 
+class UniqueView
+{
+public:
+    UniqueView() = default;
+    explicit UniqueView(void* value) noexcept : value_(value) {}
+    ~UniqueView() { reset(); }
+    UniqueView(const UniqueView&) = delete;
+    UniqueView& operator=(const UniqueView&) = delete;
+    UniqueView(UniqueView&& other) noexcept : value_(other.release()) {}
+    UniqueView& operator=(UniqueView&& other) noexcept
+    {
+        if (this != &other) reset(other.release());
+        return *this;
+    }
+    void* get() const noexcept { return value_; }
+    explicit operator bool() const noexcept { return value_ != nullptr; }
+    void* release() noexcept { void* result = value_; value_ = nullptr; return result; }
+    void reset(void* value = nullptr) noexcept
+    {
+        if (value_) UnmapViewOfFile(value_);
+        value_ = value;
+    }
+private:
+    void* value_ = nullptr;
+};
+
 template <typename T>
 class UniqueLocal
 {
@@ -162,71 +188,27 @@ std::uint64_t expectedSample(std::uint64_t block, std::size_t index)
 int consume(const wchar_t* mappingName, const wchar_t* readyName, const wchar_t* progressName,
             DWORD parentPid, bool exitAfterReady)
 {
-    HANDLE parent = OpenProcess(SYNCHRONIZE, FALSE, parentPid);
-    if (!parent)
-        return 10;
+    UniqueHandle parent(OpenProcess(SYNCHRONIZE, FALSE, parentPid));
+    if (!parent) return 10;
 
-    HANDLE mapping = OpenFileMappingW(FILE_MAP_ALL_ACCESS, FALSE, mappingName);
-    if (!mapping)
-    {
-        CloseHandle(parent);
-        return 11;
-    }
+    UniqueHandle mapping(OpenFileMappingW(FILE_MAP_ALL_ACCESS, FALSE, mappingName));
+    if (!mapping) return 11;
 
-    auto* shared = static_cast<SharedRegion*>(
-        MapViewOfFile(mapping, FILE_MAP_ALL_ACCESS, 0, 0, sizeof(SharedRegion)));
-    if (!shared)
-    {
-        CloseHandle(mapping);
-        CloseHandle(parent);
-        return 12;
-    }
+    UniqueView view(MapViewOfFile(mapping.get(), FILE_MAP_ALL_ACCESS, 0, 0, sizeof(SharedRegion)));
+    if (!view) return 12;
+    auto* shared = static_cast<SharedRegion*>(view.get());
 
-    HANDLE ready = OpenEventW(EVENT_MODIFY_STATE, FALSE, readyName);
-    if (!ready)
-    {
-        UnmapViewOfFile(shared);
-        CloseHandle(mapping);
-        CloseHandle(parent);
-        return 16;
-    }
+    UniqueHandle ready(OpenEventW(EVENT_MODIFY_STATE, FALSE, readyName));
+    if (!ready) return 16;
+
     if (shared->magic != kMagic || shared->version != 1 ||
         shared->slotCount != kCapacity)
-    {
-        CloseHandle(ready);
-        UnmapViewOfFile(shared);
-        CloseHandle(mapping);
-        CloseHandle(parent);
         return 13;
-    }
-    HANDLE progress = OpenEventW(EVENT_MODIFY_STATE, FALSE, progressName);
-    if (!progress)
-    {
-        CloseHandle(ready);
-        UnmapViewOfFile(shared);
-        CloseHandle(mapping);
-        CloseHandle(parent);
-        return 17;
-    }
-    if (!SetEvent(ready))
-    {
-        CloseHandle(progress);
-        CloseHandle(ready);
-        UnmapViewOfFile(shared);
-        CloseHandle(mapping);
-        CloseHandle(parent);
-        return 14;
-    }
 
-    if (exitAfterReady)
-    {
-        UnmapViewOfFile(shared);
-        CloseHandle(progress);
-        CloseHandle(ready);
-        CloseHandle(mapping);
-        CloseHandle(parent);
-        return 20;
-    }
+    UniqueHandle progress(OpenEventW(EVENT_MODIFY_STATE, FALSE, progressName));
+    if (!progress) return 17;
+    if (!SetEvent(ready.get())) return 14;
+    if (exitAfterReady) return 20;
 
     const ULONGLONG deadline = GetTickCount64() + kTimeoutMs;
     std::uint64_t position = 0;
@@ -234,7 +216,7 @@ int consume(const wchar_t* mappingName, const wchar_t* readyName, const wchar_t*
     while (position < kBlockCount)
     {
         if (GetTickCount64() >= deadline ||
-            WaitForSingleObject(parent, 0) != WAIT_TIMEOUT)
+            WaitForSingleObject(parent.get(), 0) != WAIT_TIMEOUT)
         {
             valid = false;
             break;
@@ -243,7 +225,6 @@ int consume(const wchar_t* mappingName, const wchar_t* readyName, const wchar_t*
         Slot& slot = shared->slots[position % kCapacity];
         const auto sequence = static_cast<std::uint64_t>(
             InterlockedCompareExchange64(&slot.sequence, 0, 0));
-
         if (sequence != position + 1)
         {
             SwitchToThread();
@@ -264,24 +245,18 @@ int consume(const wchar_t* mappingName, const wchar_t* readyName, const wchar_t*
                 break;
             }
         }
-        if (!valid)
-            break;
+        if (!valid) break;
 
         InterlockedExchange64(&slot.sequence,
                               static_cast<LONG64>(position + kCapacity));
         ++position;
-        if (position == 1 && !SetEvent(progress))
+        if (position == 1 && !SetEvent(progress.get()))
         {
             valid = false;
             break;
         }
     }
 
-    UnmapViewOfFile(shared);
-    CloseHandle(progress);
-    CloseHandle(ready);
-    CloseHandle(mapping);
-    CloseHandle(parent);
     return valid && position == kBlockCount ? 0 : 15;
 }
 
