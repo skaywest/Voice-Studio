@@ -279,10 +279,14 @@ bool produce(bool malformedHeader, bool exitAfterReady, bool terminateAfterReady
     if (!randomName(mappingName, readyName))
         return false;
 
-    UniqueHandle mapping(CreateFileMappingW(INVALID_HANDLE_VALUE, &security.attributes,
-                                            PAGE_READWRITE, 0, sizeof(SharedRegion),
-                                            mappingName.c_str()));
-    if (!mapping || GetLastError() == ERROR_ALREADY_EXISTS)
+    HANDLE rawMapping = CreateFileMappingW(INVALID_HANDLE_VALUE, &security.attributes,
+                                                PAGE_READWRITE, 0, sizeof(SharedRegion),
+                                                mappingName.c_str());
+    // GetLastError must be captured immediately: a pre-existing named mapping
+    // is a collision, not a mapping instance owned by this producer.
+    const DWORD mappingError = GetLastError();
+    UniqueHandle mapping(rawMapping);
+    if (!mapping || mappingError == ERROR_ALREADY_EXISTS)
         return false;
 
     UniqueView view(MapViewOfFile(mapping.get(), FILE_MAP_ALL_ACCESS, 0, 0, sizeof(SharedRegion)));
