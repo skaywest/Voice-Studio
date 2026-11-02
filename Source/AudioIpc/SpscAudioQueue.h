@@ -18,6 +18,15 @@ struct AudioBlock
     std::uint64_t sequence = 0;
     std::array<float, MaxFrames * MaxChannels> samples {};
 
+    // Validate metadata before using at() or passing the block to DSP code.
+    constexpr bool hasValidDimensions() const noexcept
+    {
+        return frames > 0 && frames <= MaxFrames &&
+               channels > 0 && channels <= MaxChannels;
+    }
+
+    // at() is intentionally unchecked for real-time use; callers must ensure
+    // channel < channels, frame < frames, and valid dimensions first.
     float& at(std::size_t channel, std::size_t frame) noexcept
     {
         return samples[channel * MaxFrames + frame];
