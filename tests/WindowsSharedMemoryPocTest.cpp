@@ -132,10 +132,17 @@ int consume(const wchar_t* mappingName, const wchar_t* readyName, DWORD parentPi
     }
 
     HANDLE ready = OpenEventW(EVENT_MODIFY_STATE, FALSE, readyName);
-    if (!ready || shared->magic != kMagic || shared->version != 1 ||
+    if (!ready)
+    {
+        UnmapViewOfFile(shared);
+        CloseHandle(mapping);
+        CloseHandle(parent);
+        return 16;
+    }
+    if (shared->magic != kMagic || shared->version != 1 ||
         shared->slotCount != kCapacity)
     {
-        if (ready) CloseHandle(ready);
+        CloseHandle(ready);
         UnmapViewOfFile(shared);
         CloseHandle(mapping);
         CloseHandle(parent);
@@ -215,7 +222,7 @@ std::wstring quote(const std::wstring& value)
     return L"\"" + value + L"\"";
 }
 
-bool produce(bool malformedHeader, bool exitAfterReady)
+bool produce(bool malformedHeader, bool exitAfterReady, bool terminateAfterReady)
 {
     Security security;
     if (!security.initialize())
@@ -290,9 +297,19 @@ bool produce(bool malformedHeader, bool exitAfterReady)
     HANDLE handshakeHandles[] { ready, process.hProcess };
     const DWORD handshake = WaitForMultipleObjects(2, handshakeHandles, FALSE, kTimeoutMs);
     bool ok = handshake == WAIT_OBJECT_0;
+    if (ok && terminateAfterReady)
+    {
+        // The ready event proves the child opened the mapping and validated its
+        // header. Kill it abruptly before any transfer to exercise crash detection.
+        if (!TerminateProcess(process.hProcess, 77) ||
+            WaitForSingleObject(process.hProcess, kTimeoutMs) != WAIT_OBJECT_0)
+            ok = false;
+    }
+
     const ULONGLONG transferDeadline = GetTickCount64() + kTimeoutMs;
     std::uint64_t position = 0;
-    while (ok && !malformedHeader && !exitAfterReady && position < kBlockCount)
+    while (ok && !malformedHeader && !exitAfterReady && !terminateAfterReady &&
+           position < kBlockCount)
     {
         if (GetTickCount64() >= transferDeadline ||
             WaitForSingleObject(process.hProcess, 0) != WAIT_TIMEOUT)
@@ -329,7 +346,9 @@ bool produce(bool malformedHeader, bool exitAfterReady)
     {
         DWORD exitCode = 1;
         const BOOL gotExitCode = GetExitCodeProcess(process.hProcess, &exitCode);
-        const DWORD expectedExit = malformedHeader ? 13u : (exitAfterReady ? 20u : 0u);
+        const DWORD expectedExit = malformedHeader ? 13u :
+                                   (exitAfterReady ? 20u :
+                                    (terminateAfterReady ? 77u : 0u));
         if (!gotExitCode || exitCode != expectedExit)
         {
             std::fwprintf(stderr, L"Consumer exit mismatch: got=%u, exitCode=%lu, expected=%lu, blocksSent=%llu\\n",
@@ -338,7 +357,7 @@ bool produce(bool malformedHeader, bool exitAfterReady)
                           static_cast<unsigned long long>(position));
             ok = false;
         }
-        else if (malformedHeader || exitAfterReady)
+        else if (malformedHeader || exitAfterReady || terminateAfterReady)
         {
             ok = true;
         }
@@ -350,11 +369,17 @@ bool produce(bool malformedHeader, bool exitAfterReady)
     UnmapViewOfFile(shared);
     CloseHandle(mapping);
 
-    if (ok)
+    if (ok && malformedHeader)
+        std::wprintf(L"PASS: malformed shared-memory header rejected with exit code 13\n");
+    else if (ok && exitAfterReady)
+        std::wprintf(L"PASS: worker cleanly exited after handshake with exit code 20\n");
+    else if (ok && terminateAfterReady)
+        std::wprintf(L"PASS: worker was forcibly terminated after handshake; exit code 77 observed\n");
+    else if (ok)
         std::wprintf(L"PASS: %llu blocks transferred and verified across two processes\n",
                      static_cast<unsigned long long>(kBlockCount));
     else
-        std::fwprintf(stderr, L"FAIL: cross-process transfer did not complete cleanly\n");
+        std::fwprintf(stderr, L"FAIL: shared-memory scenario did not meet its expected outcome\n");
     return ok;
 }
 } // namespace
@@ -378,10 +403,13 @@ int wmain(int argc, wchar_t** argv)
         std::wcscmp(argv[1], L"--malformed-header") == 0;
     const bool exitAfterReady = argc == 2 &&
         std::wcscmp(argv[1], L"--exit-after-ready") == 0;
-    if (argc > 2 || (argc == 2 && !malformedHeader && !exitAfterReady))
+    const bool terminateAfterReady = argc == 2 &&
+        std::wcscmp(argv[1], L"--terminate-after-ready") == 0;
+    if (argc > 2 || (argc == 2 &&
+        !malformedHeader && !exitAfterReady && !terminateAfterReady))
     {
-        std::fwprintf(stderr, L"Usage: VoiceStudioSharedMemoryPocTest.exe [--malformed-header|--exit-after-ready]\n");
+        std::fwprintf(stderr, L"Usage: VoiceStudioSharedMemoryPocTest.exe [--malformed-header|--exit-after-ready|--terminate-after-ready]\n");
         return 2;
     }
-    return produce(malformedHeader, exitAfterReady) ? 0 : 1;
+    return produce(malformedHeader, exitAfterReady, terminateAfterReady) ? 0 : 1;
 }
