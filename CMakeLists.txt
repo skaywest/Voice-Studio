@@ -129,6 +129,14 @@ if(VOICE_STUDIO_BUILD_SMOKE_TESTS)
                  COMMAND VoiceStudioWindowsWorkerControllerTest $<TARGET_FILE:VoiceStudioWorker>)
         set_tests_properties(VoiceStudioWindowsWorkerControllerTest PROPERTIES TIMEOUT 20)
 
+        # Windows shared audio mapping owner/client and slot handoff test.
+        add_executable(VoiceStudioWindowsAudioBlockMappingTest tests/WindowsAudioBlockMappingTest.cpp)
+        target_include_directories(VoiceStudioWindowsAudioBlockMappingTest PRIVATE Source)
+        target_compile_features(VoiceStudioWindowsAudioBlockMappingTest PRIVATE cxx_std_17)
+        target_link_libraries(VoiceStudioWindowsAudioBlockMappingTest PRIVATE advapi32)
+        add_test(NAME VoiceStudioWindowsAudioBlockMappingTest COMMAND VoiceStudioWindowsAudioBlockMappingTest)
+        set_tests_properties(VoiceStudioWindowsAudioBlockMappingTest PROPERTIES TIMEOUT 20)
+
         # Control-thread-only Windows Worker process owner and lifecycle smoke test.
         add_executable(VoiceStudioWindowsWorkerProcessTest tests/WindowsWorkerProcessTest.cpp)
         target_include_directories(VoiceStudioWindowsWorkerProcessTest PRIVATE Source)
