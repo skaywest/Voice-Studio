@@ -329,12 +329,18 @@ bool produce(bool malformedHeader, bool exitAfterReady)
     {
         DWORD exitCode = 1;
         const BOOL gotExitCode = GetExitCodeProcess(process.hProcess, &exitCode);
-        if (!gotExitCode || exitCode != 0)
+        const DWORD expectedExit = malformedHeader ? 13u : (exitAfterReady ? 20u : 0u);
+        if (!gotExitCode || exitCode != expectedExit)
         {
-            std::fwprintf(stderr, L"Consumer failed: GetExitCodeProcess=%u, exitCode=%lu, blocksSent=%llu\\n",
+            std::fwprintf(stderr, L"Consumer exit mismatch: got=%u, exitCode=%lu, expected=%lu, blocksSent=%llu\\n",
                           static_cast<unsigned>(gotExitCode), static_cast<unsigned long>(exitCode),
+                          static_cast<unsigned long>(expectedExit),
                           static_cast<unsigned long long>(position));
             ok = false;
+        }
+        else if (malformedHeader || exitAfterReady)
+        {
+            ok = true;
         }
     }
 
