@@ -43,18 +43,23 @@ jobs:
           $imports | Out-File -FilePath network-import-audit.txt -Encoding utf8
           if ($LASTEXITCODE -ne 0) { throw "dumpbin import inspection failed" }
 
-          $networkDllPattern = "(?im)^\s*(WININET|WS2_32|WINHTTP|URLMON|DNSAPI|WSOCK32|MSWSOCK|WEBIO|WLANAPI|RASAPI32)\.dll\s*$"
-          $networkApiPattern = "(?im)^\s*(InternetOpen|InternetConnect|HttpOpenRequest|HttpSendRequest|WinHttpOpen|WinHttpConnect|WinHttpSendRequest|URLDownloadToFile|DnsQuery|DnsQueryEx|socket|WSASocket|connect|getaddrinfo|GetAddrInfoW)\b"
+          # This is an import-table audit, not proof against dynamically resolved APIs.
+          $networkDllPattern = "(?im)^\s*(WININET|WS2_32|WINHTTP|URLMON|DNSAPI|WSOCK32|MSWSOCK|WEBIO|WLANAPI|RASAPI32|IPHLPAPI|NETAPI32|FWPUCLNT)\.dll\s*$"
+          $networkApiPattern = "(?im)^\s*(InternetOpen[A|W]?|InternetConnect[A|W]?|InternetOpenUrl[A|W]?|InternetReadFile|HttpOpenRequest[A|W]?|HttpSendRequest[A|W]?|HttpSendRequestEx[A|W]?|WinHttpOpen|WinHttpConnect|WinHttpOpenRequest|WinHttpSendRequest|WinHttpReceiveResponse|WinHttpReadData|URLDownloadToFile[A|W]?|URLOpenBlockingStream[A|W]?|DnsQuery[A|W]?|DnsQueryEx|socket|WSASocket[A|W]?|WSAStartup|connect|send|recv|getaddrinfo|GetAddrInfoW|gethostbyname)\s*$"
 
-          $dllMatches = [regex]::Matches(($imports -join "`n"), $networkDllPattern)
-          $apiMatches = [regex]::Matches(($imports -join "`n"), $networkApiPattern)
+          $importText = $imports -join "`n"
+          $dllMatches = [regex]::Matches($importText, $networkDllPattern)
+          $apiMatches = [regex]::Matches($importText, $networkApiPattern)
           if ($dllMatches.Count -gt 0 -or $apiMatches.Count -gt 0) {
             Write-Host "Potential network imports detected:"
             $dllMatches | ForEach-Object { Write-Host $_.Value }
             $apiMatches | ForEach-Object { Write-Host $_.Value }
             throw "Potential network-related imports remain in VST3 binary"
           }
-          Write-Host "PASS: no imports from the audited network DLLs or API names were found"
+          if ($importText -match "(?im)^\s*(LoadLibraryA|LoadLibraryW|GetProcAddress)\s*$") {
+            Write-Host "NOTE: dynamic module-loading APIs are imported; static imports cannot rule out runtime resolution."
+          }
+          Write-Host "PASS: no imports from the expanded audited network DLL/API list were found"
 
       - name: Upload VST3 and audit
         uses: actions/upload-artifact@v4
