@@ -74,6 +74,67 @@ void testOnlyOneConcurrentWriterWins()
     CHECK(slot.state == static_cast<std::int32_t>(AudioBlockSlotState::writing));
 }
 
+
+void testProducerConsumerPublicationStress()
+{
+    AudioBlockSlot slot {};
+    constexpr std::uint64_t blockCount = 100000;
+    std::atomic<bool> producerDone { false };
+    std::atomic<bool> valid { true };
+
+    std::thread producer([&]
+    {
+        for (std::uint64_t sequence = 1; sequence <= blockCount; ++sequence)
+        {
+            while (!tryBeginAudioBlockWrite(slot))
+                std::this_thread::yield();
+
+            slot.sequence = sequence;
+            slot.generation = 7;
+            slot.deadlineMonotonicNs = sequence + 100;
+            slot.sampleRate = 48000;
+            slot.channels = 2;
+            slot.frames = 1;
+            slot.payloadSamples = 2;
+            slot.samples[0] = static_cast<float>(sequence);
+            slot.samples[1] = -static_cast<float>(sequence);
+
+            while (!publishAudioBlockWrite(slot))
+                std::this_thread::yield();
+        }
+        producerDone.store(true, std::memory_order_release);
+    });
+
+    std::uint64_t consumed = 0;
+    while (consumed < blockCount)
+    {
+        if (!tryBeginAudioBlockRead(slot))
+        {
+            if (producerDone.load(std::memory_order_acquire) &&
+                slot.state == static_cast<std::int32_t>(AudioBlockSlotState::free))
+                break;
+            std::this_thread::yield();
+            continue;
+        }
+
+        const auto expected = consumed + 1;
+        if (slot.sequence != expected ||
+            slot.generation != 7 ||
+            slot.payloadSamples != 2 ||
+            slot.samples[0] != static_cast<float>(expected) ||
+            slot.samples[1] != -static_cast<float>(expected))
+            valid.store(false, std::memory_order_relaxed);
+
+        if (!finishAudioBlockRead(slot))
+            valid.store(false, std::memory_order_relaxed);
+        ++consumed;
+    }
+
+    producer.join();
+    CHECK(valid.load(std::memory_order_relaxed));
+    CHECK(consumed == blockCount);
+}
+
 void testRecoveryAfterWorkerExit()
 {
     AudioBlockRegion region {};
@@ -92,6 +153,7 @@ int main()
 {
     testSingleProducerConsumerTransitions();
     testOnlyOneConcurrentWriterWins();
+    testProducerConsumerPublicationStress();
     testRecoveryAfterWorkerExit();
     return 0;
 }
