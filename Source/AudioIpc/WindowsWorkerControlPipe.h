@@ -16,9 +16,8 @@
 
 namespace voice_studio::ipc
 {
-// Message-mode Named Pipe endpoint. Every method is control-thread
-// only: never call from an audio callback. The caller supplies an unpredictable
-// per-session pipe name and starts the Worker with that name out-of-band.
+// Message-mode Named Pipe endpoint. All calls are control-thread only;
+// each pending operation is overlapped and bounded by its timeout.
 class WindowsWorkerControlPipe final
 {
 public:
@@ -32,8 +31,6 @@ public:
         if (pipe != INVALID_HANDLE_VALUE || pipeName.empty())
             return false;
 
-        // Restrict the pipe DACL to its owner. The pipe object's owner is the
-        // creating process user; unrelated local users/processes cannot open it.
         PSECURITY_DESCRIPTOR securityDescriptor = nullptr;
         if (!ConvertStringSecurityDescriptorToSecurityDescriptorW(
                 L"D:P(A;;GA;;;OW)", SDDL_REVISION_1, &securityDescriptor, nullptr))
@@ -45,7 +42,7 @@ public:
 
         HANDLE handle = CreateNamedPipeW(
             pipeName.c_str(),
-            PIPE_ACCESS_DUPLEX,
+            PIPE_ACCESS_DUPLEX | FILE_FLAG_OVERLAPPED,
             PIPE_TYPE_MESSAGE | PIPE_READMODE_MESSAGE | PIPE_WAIT |
                 PIPE_REJECT_REMOTE_CLIENTS,
             1,
@@ -69,7 +66,7 @@ public:
         if (!WaitNamedPipeW(pipeName.c_str(), timeoutMs))
             return false;
         HANDLE handle = CreateFileW(pipeName.c_str(), GENERIC_READ | GENERIC_WRITE,
-                                    0, nullptr, OPEN_EXISTING, 0, nullptr);
+                                    0, nullptr, OPEN_EXISTING, FILE_FLAG_OVERLAPPED, nullptr);
         if (handle == INVALID_HANDLE_VALUE)
             return false;
         DWORD mode = PIPE_READMODE_MESSAGE;
@@ -84,51 +81,78 @@ public:
         return true;
     }
 
-    bool waitForClient() noexcept
+    bool waitForClient(DWORD timeoutMs = 3000) noexcept
     {
         if (pipe == INVALID_HANDLE_VALUE || connected)
             return false;
-        const BOOL result = ConnectNamedPipe(pipe, nullptr);
+
+        OVERLAPPED operation{};
+        operation.hEvent = CreateEventW(nullptr, TRUE, FALSE, nullptr);
+        if (operation.hEvent == nullptr)
+            return false;
+
+        const BOOL result = ConnectNamedPipe(pipe, &operation);
         if (result)
         {
+            CloseHandle(operation.hEvent);
             connected = true;
             return true;
         }
+
         const DWORD error = GetLastError();
         if (error == ERROR_PIPE_CONNECTED)
         {
+            CloseHandle(operation.hEvent);
             connected = true;
             return true;
         }
-        return false;
+        if (error != ERROR_IO_PENDING)
+        {
+            CloseHandle(operation.hEvent);
+            return false;
+        }
+
+        const DWORD wait = WaitForSingleObject(operation.hEvent, timeoutMs);
+        if (wait != WAIT_OBJECT_0)
+        {
+            cancelAndDrain(operation);
+            CloseHandle(operation.hEvent);
+            return false;
+        }
+
+        DWORD ignored = 0;
+        const BOOL completed = GetOverlappedResult(pipe, &operation, &ignored, FALSE);
+        CloseHandle(operation.hEvent);
+        connected = completed != FALSE;
+        return connected;
     }
 
-    bool sendCommand(const WorkerCommandMessage& message) noexcept
+    bool sendCommand(const WorkerCommandMessage& message, DWORD timeoutMs = 3000) noexcept
     {
         return connected && hasValidWorkerCommand(message) &&
-               writeMessage(&message, static_cast<DWORD>(sizeof(message)));
+               writeMessage(&message, static_cast<DWORD>(sizeof(message)), timeoutMs);
     }
 
-    bool receiveStatus(WorkerStatusMessage& output) noexcept
+    bool receiveStatus(WorkerStatusMessage& output, DWORD timeoutMs = 3000) noexcept
     {
         WorkerStatusMessage message{};
-        if (!connected || !readExactMessage(&message, static_cast<DWORD>(sizeof(message))) ||
+        if (!connected || !readExactMessage(&message, static_cast<DWORD>(sizeof(message)), timeoutMs) ||
             !hasValidWorkerStatus(message))
             return false;
         output = message;
         return true;
     }
 
-    bool sendStatus(const WorkerStatusMessage& message) noexcept
+    bool sendStatus(const WorkerStatusMessage& message, DWORD timeoutMs = 3000) noexcept
     {
         return connected && hasValidWorkerStatus(message) &&
-               writeMessage(&message, static_cast<DWORD>(sizeof(message)));
+               writeMessage(&message, static_cast<DWORD>(sizeof(message)), timeoutMs);
     }
 
-    bool receiveCommand(WorkerCommandMessage& output) noexcept
+    bool receiveCommand(WorkerCommandMessage& output, DWORD timeoutMs = 3000) noexcept
     {
         WorkerCommandMessage message{};
-        if (!connected || !readExactMessage(&message, static_cast<DWORD>(sizeof(message))) ||
+        if (!connected || !readExactMessage(&message, static_cast<DWORD>(sizeof(message)), timeoutMs) ||
             !hasValidWorkerCommand(message))
             return false;
         output = message;
@@ -137,14 +161,8 @@ public:
 
     void disconnect() noexcept
     {
-        if (pipe != INVALID_HANDLE_VALUE)
-        {
-            // Do not FlushFileBuffers here: it can block until the peer reads
-            // every buffered byte. Disconnect must remain bounded by the
-            // control thread's own policy, not by an unresponsive Worker.
-            if (connected && serverEndpoint)
-                DisconnectNamedPipe(pipe);
-        }
+        if (pipe != INVALID_HANDLE_VALUE && connected && serverEndpoint)
+            DisconnectNamedPipe(pipe);
         connected = false;
     }
 
@@ -161,20 +179,65 @@ public:
     bool isConnected() const noexcept { return connected; }
 
 private:
-    bool writeMessage(const void* data, DWORD size) noexcept
+    void cancelAndDrain(OVERLAPPED& operation) noexcept
     {
-        DWORD written = 0;
-        return WriteFile(pipe, data, size, &written, nullptr) != FALSE &&
-               written == size;
+        // The OVERLAPPED storage and event must remain alive until the kernel
+        // has completed cancellation; otherwise late completion can corrupt memory.
+        if (!CancelIoEx(pipe, &operation) && GetLastError() != ERROR_NOT_FOUND)
+        {
+            // Still wait below: cancellation failure does not make the request safe to forget.
+        }
+        WaitForSingleObject(operation.hEvent, INFINITE);
+        DWORD ignored = 0;
+        GetOverlappedResult(pipe, &operation, &ignored, FALSE);
     }
 
-    bool readExactMessage(void* data, DWORD expectedSize) noexcept
+    bool transfer(bool writing, const void* source, void* destination,
+                  DWORD size, DWORD timeoutMs, DWORD& transferred) noexcept
+    {
+        OVERLAPPED operation{};
+        operation.hEvent = CreateEventW(nullptr, TRUE, FALSE, nullptr);
+        if (operation.hEvent == nullptr)
+            return false;
+
+        BOOL completed = writing
+            ? WriteFile(pipe, source, size, &transferred, &operation)
+            : ReadFile(pipe, destination, size, &transferred, &operation);
+
+        if (!completed)
+        {
+            const DWORD error = GetLastError();
+            if (error != ERROR_IO_PENDING)
+            {
+                CloseHandle(operation.hEvent);
+                return false;
+            }
+
+            const DWORD wait = WaitForSingleObject(operation.hEvent, timeoutMs);
+            if (wait != WAIT_OBJECT_0)
+            {
+                cancelAndDrain(operation);
+                CloseHandle(operation.hEvent);
+                return false;
+            }
+            completed = GetOverlappedResult(pipe, &operation, &transferred, FALSE);
+        }
+
+        CloseHandle(operation.hEvent);
+        return completed != FALSE;
+    }
+
+    bool writeMessage(const void* data, DWORD size, DWORD timeoutMs) noexcept
+    {
+        DWORD written = 0;
+        return transfer(true, data, nullptr, size, timeoutMs, written) && written == size;
+    }
+
+    bool readExactMessage(void* data, DWORD expectedSize, DWORD timeoutMs) noexcept
     {
         DWORD received = 0;
-        const BOOL ok = ReadFile(pipe, data, expectedSize, &received, nullptr);
-        // Message-mode pipes report ERROR_MORE_DATA when a peer sends a
-        // larger frame. Reject it rather than accepting a truncated ABI.
-        return ok != FALSE && received == expectedSize;
+        return transfer(false, nullptr, data, expectedSize, timeoutMs, received) &&
+               received == expectedSize;
     }
 
     HANDLE pipe = INVALID_HANDLE_VALUE;
