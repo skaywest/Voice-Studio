@@ -1,7 +1,22 @@
 #include "AudioIpc/WindowsSharedMemoryAbi.h"
 
-#include <cassert>
 #include <cstdint>
+#include <cstdio>
+#include <cstdlib>
+
+namespace
+{
+void check(bool condition, const char* expression, int line)
+{
+    if (!condition)
+    {
+        std::fprintf(stderr, "CHECK failed at line %d: %s\\n", line, expression);
+        std::abort();
+    }
+}
+}
+
+#define CHECK(expression) check((expression), #expression, __LINE__)
 
 using voice_studio::ipc::SharedMemoryRegion;
 
@@ -22,38 +37,38 @@ SharedMemoryRegion makeValidRegion()
 void testValidHeader()
 {
     const auto region = makeValidRegion();
-    assert(voice_studio::ipc::hasValidSharedMemoryHeader(region));
+    CHECK(voice_studio::ipc::hasValidSharedMemoryHeader(region));
 }
 
 void testRejectsEachInvalidField()
 {
     auto region = makeValidRegion();
     region.magic ^= 1;
-    assert(!voice_studio::ipc::hasValidSharedMemoryHeader(region));
+    CHECK(!voice_studio::ipc::hasValidSharedMemoryHeader(region));
 
     region = makeValidRegion();
     ++region.version;
-    assert(!voice_studio::ipc::hasValidSharedMemoryHeader(region));
+    CHECK(!voice_studio::ipc::hasValidSharedMemoryHeader(region));
 
     region = makeValidRegion();
     ++region.headerSize;
-    assert(!voice_studio::ipc::hasValidSharedMemoryHeader(region));
+    CHECK(!voice_studio::ipc::hasValidSharedMemoryHeader(region));
 
     region = makeValidRegion();
     ++region.slotCount;
-    assert(!voice_studio::ipc::hasValidSharedMemoryHeader(region));
+    CHECK(!voice_studio::ipc::hasValidSharedMemoryHeader(region));
 
     region = makeValidRegion();
     ++region.slotSize;
-    assert(!voice_studio::ipc::hasValidSharedMemoryHeader(region));
+    CHECK(!voice_studio::ipc::hasValidSharedMemoryHeader(region));
 
     region = makeValidRegion();
     ++region.sampleCount;
-    assert(!voice_studio::ipc::hasValidSharedMemoryHeader(region));
+    CHECK(!voice_studio::ipc::hasValidSharedMemoryHeader(region));
 
     region = makeValidRegion();
     region.reserved = 1;
-    assert(!voice_studio::ipc::hasValidSharedMemoryHeader(region));
+    CHECK(!voice_studio::ipc::hasValidSharedMemoryHeader(region));
 }
 }
 
