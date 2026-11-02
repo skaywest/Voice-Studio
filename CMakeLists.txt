@@ -54,3 +54,17 @@ target_link_libraries(VoiceStudio PRIVATE
     juce::juce_recommended_lto_flags
     juce::juce_recommended_warning_flags
 )
+
+option(VOICE_STUDIO_BUILD_SMOKE_TESTS "Build headless processor smoke tests" ON)
+if(VOICE_STUDIO_BUILD_SMOKE_TESTS)
+    enable_testing()
+    add_executable(VoiceStudioProcessorSmokeTest tests/ProcessorSmokeTest.cpp)
+    target_compile_features(VoiceStudioProcessorSmokeTest PRIVATE cxx_std_17)
+    target_compile_definitions(VoiceStudioProcessorSmokeTest PRIVATE
+        JUCE_WEB_BROWSER=0
+        JUCE_USE_CURL=0
+        JUCE_VST3_CAN_REPLACE_VST2=0
+    )
+    target_link_libraries(VoiceStudioProcessorSmokeTest PRIVATE VoiceStudio)
+    add_test(NAME VoiceStudioProcessorSmokeTest COMMAND VoiceStudioProcessorSmokeTest)
+endif()
