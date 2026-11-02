@@ -10,6 +10,7 @@ on:
       - "CMakeLists.txt"
       - "cmake/**"
       - "README.md"
+      - "docs/**"
       - "Source/**"
       - "tests/**"
       - ".github/workflows/build.yml"
@@ -37,6 +38,9 @@ jobs:
 
       - name: Build processor smoke tests
         run: cmake --build build --config Release --target VoiceStudioProcessorSmokeTest
+
+      - name: Build audio queue tests
+        run: cmake --build build --config Release --target VoiceStudioAudioQueueTest
 
       - name: Run processor smoke tests
         run: ctest --test-dir build -C Release --output-on-failure
