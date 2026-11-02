@@ -99,6 +99,8 @@ if(VOICE_STUDIO_BUILD_SMOKE_TESTS)
                  COMMAND VoiceStudioSharedMemoryPocTest --terminate-during-transfer)
         add_test(NAME VoiceStudioSharedMemoryCorruptPayloadTest
                  COMMAND VoiceStudioSharedMemoryPocTest --corrupt-first-block)
+        add_test(NAME VoiceStudioSharedMemoryRestartAfterCrashTest
+                 COMMAND VoiceStudioSharedMemoryPocTest --restart-after-crash)
         set_tests_properties(
             VoiceStudioSharedMemoryPocTest
             VoiceStudioSharedMemoryMalformedHeaderTest
@@ -106,6 +108,7 @@ if(VOICE_STUDIO_BUILD_SMOKE_TESTS)
             VoiceStudioSharedMemoryWorkerCrashTest
             VoiceStudioSharedMemoryWorkerCrashDuringTransferTest
             VoiceStudioSharedMemoryCorruptPayloadTest
+            VoiceStudioSharedMemoryRestartAfterCrashTest
             PROPERTIES TIMEOUT 90)
     endif()
 endif()
