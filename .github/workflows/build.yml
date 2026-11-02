@@ -67,6 +67,9 @@ jobs:
       - name: Build worker lifecycle tests
         run: cmake --build build --config Release --target VoiceStudioWorkerLifecycleTest
 
+      - name: Build Worker control coordinator tests
+        run: cmake --build build --config Release --target VoiceStudioWorkerControlCoordinatorTest
+
       - name: Build Windows Worker process supervisor test
         run: cmake --build build --config Release --target VoiceStudioWindowsWorkerProcessTest
 
