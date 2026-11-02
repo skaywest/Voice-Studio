@@ -72,7 +72,7 @@ struct WorkerStatusMessage
 };
 
 static_assert(sizeof(WorkerCommandMessage) == 40, "Worker command wire size is fixed");
-static_assert(sizeof(WorkerStatusMessage) == 48, "Worker status wire size is fixed");
+static_assert(sizeof(WorkerStatusMessage) == 56, "Worker status wire size is fixed");
 static_assert(std::is_standard_layout<WorkerCommandMessage>::value, "Command must be standard layout");
 static_assert(std::is_trivially_copyable<WorkerCommandMessage>::value, "Command must be trivially copyable");
 static_assert(std::is_standard_layout<WorkerStatusMessage>::value, "Status must be standard layout");
