@@ -101,6 +101,18 @@ if(VOICE_STUDIO_BUILD_SMOKE_TESTS)
         target_compile_features(VoiceStudioAudioBlockSlotSyncTest PRIVATE cxx_std_17)
         add_test(NAME VoiceStudioAudioBlockSlotSyncTest COMMAND VoiceStudioAudioBlockSlotSyncTest)
 
+        # Exercise the AudioBlockSlot Interlocked ABI in a real second process.
+        add_executable(VoiceStudioAudioBlockSlotProcessTest tests/WindowsAudioBlockSlotProcessTest.cpp)
+        target_include_directories(VoiceStudioAudioBlockSlotProcessTest PRIVATE Source)
+        target_compile_features(VoiceStudioAudioBlockSlotProcessTest PRIVATE cxx_std_17)
+        add_test(NAME VoiceStudioAudioBlockSlotProcessTest COMMAND VoiceStudioAudioBlockSlotProcessTest)
+        add_test(NAME VoiceStudioAudioBlockSlotWorkerCrashRecoveryTest
+                 COMMAND VoiceStudioAudioBlockSlotProcessTest --worker-crash-recovery)
+        set_tests_properties(
+            VoiceStudioAudioBlockSlotProcessTest
+            VoiceStudioAudioBlockSlotWorkerCrashRecoveryTest
+            PROPERTIES TIMEOUT 45)
+
         add_executable(VoiceStudioSharedMemoryPocTest tests/WindowsSharedMemoryPocTest.cpp)
         target_include_directories(VoiceStudioSharedMemoryPocTest PRIVATE Source)
         target_compile_features(VoiceStudioSharedMemoryPocTest PRIVATE cxx_std_17)
