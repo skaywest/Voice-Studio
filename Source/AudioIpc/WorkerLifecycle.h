@@ -15,8 +15,10 @@ enum class WorkerLifecycleState : std::uint8_t
     disabled,
     starting,
     ready,
+    enabling,
     running,
     coolingDown,
+    unloading,
     stopping,
     faulted
 };
@@ -75,20 +77,30 @@ public:
         switch (workerState)
         {
             case WorkerState::ready:
+                // A stop acknowledgement means processing has stopped, but the
+                // worker and its model may remain resident during the cooldown.
                 if (state == WorkerLifecycleState::starting ||
-                    state == WorkerLifecycleState::stopping)
+                    state == WorkerLifecycleState::enabling)
                     state = WorkerLifecycleState::ready;
+                else if (state == WorkerLifecycleState::unloading)
+                    state = WorkerLifecycleState::ready;
+                // Do not discard the cooldown deadline when Stop is acked.
                 break;
             case WorkerState::processing:
-                if (state == WorkerLifecycleState::ready ||
+                if (state == WorkerLifecycleState::enabling ||
                     state == WorkerLifecycleState::running)
                     state = WorkerLifecycleState::running;
                 break;
             case WorkerState::stopping:
-                state = WorkerLifecycleState::stopping;
+                if (state != WorkerLifecycleState::coolingDown)
+                    state = WorkerLifecycleState::stopping;
                 break;
             case WorkerState::stopped:
-                state = WorkerLifecycleState::disabled;
+                // "stopped" is an engine state, not proof that the process
+                // exited. Keep the supervisor session available for restart.
+                if (state == WorkerLifecycleState::unloading ||
+                    state == WorkerLifecycleState::stopping)
+                    state = WorkerLifecycleState::ready;
                 break;
             case WorkerState::starting:
             case WorkerState::loadingModel:
@@ -106,13 +118,14 @@ public:
         ++requestId;
         if (requestId == 0)
             ++requestId;
-        state = WorkerLifecycleState::running;
+        state = WorkerLifecycleState::enabling;
         return WorkerLifecycleAction::sendStart;
     }
 
     WorkerLifecycleAction userDisableAi(std::uint64_t nowNs) noexcept
     {
-        if (state == WorkerLifecycleState::running)
+        if (state == WorkerLifecycleState::running ||
+            state == WorkerLifecycleState::enabling)
         {
             ++requestId;
             if (requestId == 0)
@@ -128,8 +141,10 @@ public:
     {
         if ((state == WorkerLifecycleState::starting ||
              state == WorkerLifecycleState::ready ||
+             state == WorkerLifecycleState::enabling ||
              state == WorkerLifecycleState::running ||
-             state == WorkerLifecycleState::coolingDown) &&
+             state == WorkerLifecycleState::coolingDown ||
+             state == WorkerLifecycleState::unloading) &&
             lastHeartbeatNs != 0 &&
             nowNs >= lastHeartbeatNs &&
             nowNs - lastHeartbeatNs > kHeartbeatTimeoutNs)
@@ -141,7 +156,10 @@ public:
         if (state == WorkerLifecycleState::coolingDown &&
             nowNs >= cooldownDeadlineNs)
         {
-            state = WorkerLifecycleState::stopping;
+            state = WorkerLifecycleState::unloading;
+            ++requestId;
+            if (requestId == 0)
+                ++requestId;
             return WorkerLifecycleAction::sendUnloadNow;
         }
         return WorkerLifecycleAction::none;
@@ -152,7 +170,7 @@ public:
         if (state == WorkerLifecycleState::disabled ||
             state == WorkerLifecycleState::faulted)
             return WorkerLifecycleAction::none;
-        state = WorkerLifecycleState::stopping;
+        state = WorkerLifecycleState::unloading;
         ++requestId;
         if (requestId == 0)
             ++requestId;
