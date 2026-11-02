@@ -12,7 +12,7 @@ Local-first VST3 voice-processing plugin for Windows and Wave Link.
 - Never disable or evade FACEIT Anti-Cheat, Easy Anti-Cheat, or other security software.
 
 ## Current DSP implementation
-The DSP path is opt-in via **ENABLE DSP PROCESSING** (enabled by default). It includes:
+The DSP path is controlled by **ENABLE DSP PROCESSING** and is enabled by default. When disabled, audio is passed through unchanged. It includes:
 - 80 Hz high-pass filter for low-frequency rumble.
 - +2.5 dB presence peak around 3.2 kHz for speech intelligibility.
 - Compressor at -18 dB threshold, 3:1 ratio, 8 ms attack, 100 ms release.
