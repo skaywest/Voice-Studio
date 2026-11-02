@@ -93,10 +93,13 @@ if(VOICE_STUDIO_BUILD_SMOKE_TESTS)
                  COMMAND VoiceStudioSharedMemoryPocTest --malformed-header)
         add_test(NAME VoiceStudioSharedMemoryWorkerExitTest
                  COMMAND VoiceStudioSharedMemoryPocTest --exit-after-ready)
+        add_test(NAME VoiceStudioSharedMemoryWorkerCrashTest
+                 COMMAND VoiceStudioSharedMemoryPocTest --terminate-after-ready)
         set_tests_properties(
             VoiceStudioSharedMemoryPocTest
             VoiceStudioSharedMemoryMalformedHeaderTest
             VoiceStudioSharedMemoryWorkerExitTest
+            VoiceStudioSharedMemoryWorkerCrashTest
             PROPERTIES TIMEOUT 90)
     endif()
 endif()
