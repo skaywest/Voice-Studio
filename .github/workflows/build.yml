@@ -34,6 +34,12 @@ jobs:
       - name: Build VST3
         run: cmake --build build --config Release --target VoiceStudio_VST3
 
+      - name: Build processor smoke tests
+        run: cmake --build build --config Release --target VoiceStudioProcessorSmokeTest
+
+      - name: Run processor smoke tests
+        run: ctest --test-dir build -C Release --output-on-failure
+
       - name: Audit network imports
         shell: pwsh
         run: |
