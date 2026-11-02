@@ -103,9 +103,11 @@ public:
     {
         if (pipe != INVALID_HANDLE_VALUE)
         {
+            // Do not FlushFileBuffers here: it can block until the peer reads
+            // every buffered byte. Disconnect must remain bounded by the
+            // control thread's own policy, not by an unresponsive Worker.
             if (connected)
-                FlushFileBuffers(pipe);
-            DisconnectNamedPipe(pipe);
+                DisconnectNamedPipe(pipe);
         }
         connected = false;
     }
