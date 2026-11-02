@@ -72,7 +72,7 @@ namespace
         voice_studio::SpscQueue<Block, 64> queue;
         std::atomic<bool> consumerFailed { false };
 
-        std::thread producer([&queue]
+        std::thread producer([&queue, blockCount]
         {
             for (std::uint64_t sequence = 0; sequence < blockCount; ++sequence)
             {
@@ -89,7 +89,7 @@ namespace
             }
         });
 
-        std::thread consumer([&queue, &consumerFailed]
+        std::thread consumer([&queue, &consumerFailed, blockCount]
         {
             Block block;
             for (std::uint64_t expected = 0; expected < blockCount; ++expected)
