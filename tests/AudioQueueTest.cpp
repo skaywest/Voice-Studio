@@ -374,6 +374,67 @@ namespace
                "long-running imbalance leaves queue empty");
     }
 
+    void testApproximateSizeRemainsBoundedDuringConcurrency()
+    {
+        constexpr std::uint64_t blockCount = 500000;
+        using Block = voice_studio::AudioBlock<4, 1>;
+        constexpr std::size_t capacity = 32;
+        voice_studio::SpscQueue<Block, capacity> queue;
+        std::atomic<bool> producerDone { false };
+        std::atomic<bool> invalidSizeObserved { false };
+        std::atomic<bool> consumerFailed { false };
+
+        std::thread producer([&]
+        {
+            for (std::uint64_t sequence = 0; sequence < blockCount; ++sequence)
+            {
+                Block block;
+                block.frames = 4;
+                block.channels = 1;
+                block.sequence = sequence;
+                if (!queue.tryPush(block))
+                {
+                    --sequence;
+                    std::this_thread::yield();
+                }
+            }
+            producerDone.store(true, std::memory_order_release);
+        });
+
+        std::thread consumer([&]
+        {
+            Block block;
+            std::uint64_t expected = 0;
+            while (expected < blockCount)
+            {
+                const auto size = queue.approximateSize();
+                if (size > capacity)
+                    invalidSizeObserved.store(true, std::memory_order_relaxed);
+
+                if (queue.tryPop(block))
+                {
+                    if (block.sequence != expected || block.frames != 4 || block.channels != 1)
+                        consumerFailed.store(true, std::memory_order_relaxed);
+                    ++expected;
+                }
+                else if (!producerDone.load(std::memory_order_acquire))
+                {
+                    std::this_thread::yield();
+                }
+            }
+        });
+
+        producer.join();
+        consumer.join();
+
+        expect(!invalidSizeObserved.load(std::memory_order_relaxed),
+               "approximate queue size remains within zero and capacity during concurrent access");
+        expect(!consumerFailed.load(std::memory_order_relaxed),
+               "concurrent size observations do not disturb FIFO data transfer");
+        expect(queue.approximateSize() == 0,
+               "queue is empty after concurrent size observation stress");
+    }
+
     void testConcurrentProducerConsumer()
     {
         constexpr std::uint64_t blockCount = 1'000'000;
@@ -439,6 +500,7 @@ int main()
     testSustainedProducerFasterThanConsumer();
     testConsumerStopAndRestart();
     testLongRunningProducerConsumerImbalance();
+    testApproximateSizeRemainsBoundedDuringConcurrency();
     testConcurrentProducerConsumer();
 
     if (failures != 0)
