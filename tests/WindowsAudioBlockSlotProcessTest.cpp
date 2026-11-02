@@ -39,21 +39,6 @@ struct View
     View& operator=(const View&) = delete;
 };
 
-bool waitForState(AudioBlockSlot& slot, AudioBlockSlotState expected, HANDLE process)
-{
-    const ULONGLONG deadline = GetTickCount64() + kTimeoutMs;
-    while (GetTickCount64() < deadline)
-    {
-        if (WaitForSingleObject(process, 0) != WAIT_TIMEOUT)
-            return false;
-        if (InterlockedCompareExchange(reinterpret_cast<volatile LONG*>(&slot.state), 0, 0) ==
-            static_cast<LONG>(expected))
-            return true;
-        SwitchToThread();
-    }
-    return false;
-}
-
 int childMain(const wchar_t* name, bool crashWhileReading)
 {
     Handle mapping(OpenFileMappingW(FILE_MAP_ALL_ACCESS, FALSE, name));
@@ -137,6 +122,7 @@ bool runScenario(bool crash)
     bool ok = true;
     if (crash)
     {
+        if (!tryBeginAudioBlockWrite(slot)) return false;
         slot.sequence = 1;
         slot.generation = 3;
         slot.deadlineMonotonicNs = 1;
@@ -146,18 +132,10 @@ bool runScenario(bool crash)
         slot.payloadSamples = 1;
         slot.samples[0] = 1.0f;
         if (!publishAudioBlockWrite(slot)) ok = false;
-        if (ok && !waitForState(slot, AudioBlockSlotState::free, process))
-        {
-            // Child may claim the slot before the parent observes READING;
-            // wait for its process exit, which is the required reclaim proof.
-            if (WaitForSingleObject(process.value, kTimeoutMs) != WAIT_OBJECT_0)
-                ok = false;
-        }
-        else if (ok)
-        {
-            if (WaitForSingleObject(process.value, kTimeoutMs) != WAIT_OBJECT_0)
-                ok = false;
-        }
+        // The child exits immediately after claiming READING. Only after the
+        // process handle is signaled may the parent reclaim the abandoned slot.
+        if (ok && WaitForSingleObject(process.value, kTimeoutMs) != WAIT_OBJECT_0)
+            ok = false;
         DWORD exitCode = 0;
         if (ok && (!GetExitCodeProcess(process.value, &exitCode) || exitCode != 77))
             ok = false;
