@@ -34,5 +34,6 @@ private:
     std::array<juce::dsp::IIR::Filter<float>, 2> highPassFilters;
     std::array<juce::dsp::IIR::Filter<float>, 2> presenceFilters;
     std::array<juce::dsp::Compressor<float>, 2> compressors;
+    juce::SmoothedValue<float, juce::ValueSmoothingTypes::Linear> outputGainSmoother;
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(VoiceStudioAudioProcessor)
 };
