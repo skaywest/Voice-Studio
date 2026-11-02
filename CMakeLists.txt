@@ -93,6 +93,12 @@ if(VOICE_STUDIO_BUILD_SMOKE_TESTS)
     target_compile_features(VoiceStudioAudioBlockAbiTest PRIVATE cxx_std_17)
     add_test(NAME VoiceStudioAudioBlockAbiTest COMMAND VoiceStudioAudioBlockAbiTest)
 
+    # Versioned worker command/status wire-format validation.
+    add_executable(VoiceStudioWorkerControlAbiTest tests/WorkerControlAbiTest.cpp)
+    target_include_directories(VoiceStudioWorkerControlAbiTest PRIVATE Source)
+    target_compile_features(VoiceStudioWorkerControlAbiTest PRIVATE cxx_std_17)
+    add_test(NAME VoiceStudioWorkerControlAbiTest COMMAND VoiceStudioWorkerControlAbiTest)
+
     # Windows-only, standalone cross-process shared-memory proof of concept.
     # This is a test executable; it is not loaded or launched by the VST3.
     if(WIN32 AND CMAKE_SIZEOF_VOID_P EQUAL 8)
