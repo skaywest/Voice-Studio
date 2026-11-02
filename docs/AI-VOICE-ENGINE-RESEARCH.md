@@ -54,4 +54,4 @@ Source: https://github.com/shirohata/vc-rs
 
 ## Current decision
 
-No AI engine is selected or integrated yet. The Rust/ONNX approach is a candidate for a contained prototype, not an approved production dependency. The Python-worker RVC VST architecture remains a useful reference for audio-thread isolation. The next implementation milestone should be a dependency-free IPC/ring-buffer prototype and test harness, not downloading models or enabling AI in the existing plugin.
+No AI engine is selected or integrated yet. The Rust/ONNX approach is a candidate for a contained prototype, not an approved production dependency. The Python-worker RVC VST architecture remains a useful reference for audio-thread isolation. The next implementation milestone is documented in [LOCAL-AI-WORKER-IPC-PROTOCOL.md](LOCAL-AI-WORKER-IPC-PROTOCOL.md). It is a design specification only; implementation should begin with protocol/queue tests and a reviewed shared-memory ABI, not downloading models or enabling AI in the existing plugin.
