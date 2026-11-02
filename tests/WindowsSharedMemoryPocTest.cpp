@@ -14,55 +14,20 @@
 #include <type_traits>
 #include <vector>
 
+#include "AudioIpc/WindowsSharedMemoryAbi.h"
+
 #pragma comment(lib, "bcrypt.lib")
 #pragma comment(lib, "advapi32.lib")
 
 namespace
 {
-constexpr std::uint64_t kMagic = 0x5653545544494F31ull;
 constexpr std::uint64_t kBlockCount = 1'000'000;
-constexpr std::uint64_t kCapacity = 8;
-constexpr std::size_t kSamples = 64;
+constexpr std::uint64_t kCapacity = voice_studio::ipc::kSharedMemorySlotCount;
+constexpr std::size_t kSamples = voice_studio::ipc::kSharedMemorySampleCount;
 constexpr DWORD kTimeoutMs = 30000;
-
-struct Slot
-{
-    alignas(8) volatile LONG64 sequence;
-    std::uint64_t block;
-    std::array<float, kSamples> samples;
-};
-
-struct SharedRegion
-{
-    std::uint64_t magic;
-    std::uint32_t version;
-    std::uint32_t headerSize;
-    std::uint32_t slotCount;
-    std::uint32_t slotSize;
-    std::uint32_t sampleCount;
-    std::uint32_t reserved;
-    Slot slots[kCapacity];
-};
-static_assert(alignof(Slot) >= 8, "Interlocked sequence must be 8-byte aligned");
-static_assert(alignof(SharedRegion) >= 8, "Shared region must preserve Interlocked alignment");
-static_assert(offsetof(Slot, block) == 8, "Slot block offset is part of the ABI");
-static_assert(offsetof(Slot, samples) == 16, "Slot payload offset is part of the ABI");
-static_assert(sizeof(Slot) == 16 + sizeof(float) * kSamples, "Slot size is part of the ABI");
-static_assert(offsetof(SharedRegion, magic) == 0, "Header magic offset is part of the ABI");
-static_assert(offsetof(SharedRegion, version) == 8, "Header version offset is part of the ABI");
-static_assert(offsetof(SharedRegion, reserved) == 28, "Header reserved offset is part of the ABI");
-static_assert(offsetof(SharedRegion, slots) == 32, "Header size is part of the ABI");
-static_assert(std::is_trivially_copyable<Slot>::value, "Slot ABI must be trivially copyable");
-static_assert(std::is_trivially_copyable<SharedRegion>::value, "Shared ABI must be trivially copyable");
-static_assert(offsetof(Slot, sequence) % 8 == 0, "Sequence offset must be aligned");
-static_assert(std::is_standard_layout<Slot>::value, "Slot ABI must be standard layout");
-static_assert(std::is_standard_layout<SharedRegion>::value, "Shared ABI must be standard layout");
-static_assert(offsetof(SharedRegion, slots) == sizeof(SharedRegion) - sizeof(Slot) * kCapacity,
-              "Shared header must have a stable contiguous layout");
-static_assert(sizeof(Slot) <= (std::numeric_limits<std::uint32_t>::max)(),
-              "Slot size must fit the ABI field");
-static_assert(sizeof(SharedRegion) <= (std::numeric_limits<std::uint32_t>::max)(),
-              "Region size must fit the ABI field");
+using Slot = voice_studio::ipc::SharedMemorySlot;
+using SharedRegion = voice_studio::ipc::SharedMemoryRegion;
+constexpr auto kMagic = voice_studio::ipc::kSharedMemoryMagic;
 
 class UniqueHandle
 {
@@ -223,12 +188,7 @@ int consume(const wchar_t* mappingName, const wchar_t* readyName, const wchar_t*
     UniqueHandle ready(OpenEventW(EVENT_MODIFY_STATE, FALSE, readyName));
     if (!ready) return 16;
 
-    if (shared->magic != kMagic || shared->version != 2 ||
-        shared->headerSize != offsetof(SharedRegion, slots) ||
-        shared->slotCount != kCapacity ||
-        shared->slotSize != sizeof(Slot) ||
-        shared->sampleCount != kSamples ||
-        shared->reserved != 0)
+    if (!voice_studio::ipc::hasValidSharedMemoryHeader(*shared))
     {
         std::fwprintf(stderr, L"Rejected ABI: version=%u header=%u slots=%u slotSize=%u samples=%u reserved=%u\\n",
                       shared->version, shared->headerSize, shared->slotCount,
