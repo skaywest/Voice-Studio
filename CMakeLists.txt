@@ -115,6 +115,13 @@ if(VOICE_STUDIO_BUILD_SMOKE_TESTS)
         add_test(NAME VoiceStudioWindowsWorkerProcessTest COMMAND VoiceStudioWindowsWorkerProcessTest)
         set_tests_properties(VoiceStudioWindowsWorkerProcessTest PROPERTIES TIMEOUT 20)
 
+        # Local-only, message-mode Worker control pipe endpoint smoke test.
+        add_executable(VoiceStudioWindowsWorkerControlPipeTest tests/WindowsWorkerControlPipeTest.cpp)
+        target_include_directories(VoiceStudioWindowsWorkerControlPipeTest PRIVATE Source)
+        target_compile_features(VoiceStudioWindowsWorkerControlPipeTest PRIVATE cxx_std_17)
+        add_test(NAME VoiceStudioWindowsWorkerControlPipeTest COMMAND VoiceStudioWindowsWorkerControlPipeTest)
+        set_tests_properties(VoiceStudioWindowsWorkerControlPipeTest PROPERTIES TIMEOUT 20)
+
         add_executable(VoiceStudioAudioBlockSlotSyncTest tests/AudioBlockSlotSyncTest.cpp)
         target_include_directories(VoiceStudioAudioBlockSlotSyncTest PRIVATE Source)
         target_compile_features(VoiceStudioAudioBlockSlotSyncTest PRIVATE cxx_std_17)
