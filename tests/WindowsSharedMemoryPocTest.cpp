@@ -333,7 +333,7 @@ int wmain(int argc, wchar_t** argv)
     {
         wchar_t* end = nullptr;
         const unsigned long parentPid = std::wcstoul(argv[4], &end, 10);
-        if (!end || *end != L'\\0' || parentPid == 0 || parentPid > MAXDWORD)
+        if (!end || *end != L'\0' || parentPid == 0 || parentPid > MAXDWORD)
             return 2;
         return consume(argv[2], argv[3], static_cast<DWORD>(parentPid)) ? 0 : 1;
     }
