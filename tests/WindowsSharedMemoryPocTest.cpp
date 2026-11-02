@@ -35,12 +35,23 @@ struct SharedRegion
 {
     std::uint64_t magic;
     std::uint32_t version;
+    std::uint32_t headerSize;
     std::uint32_t slotCount;
+    std::uint32_t slotSize;
+    std::uint32_t sampleCount;
+    std::uint32_t reserved;
     Slot slots[kCapacity];
 };
 static_assert(alignof(Slot) >= 8, "Interlocked sequence must be 8-byte aligned");
 static_assert(offsetof(Slot, sequence) % 8 == 0, "Sequence offset must be aligned");
+static_assert(std::is_standard_layout<Slot>::value, "Slot ABI must be standard layout");
 static_assert(std::is_standard_layout<SharedRegion>::value, "Shared ABI must be standard layout");
+static_assert(offsetof(SharedRegion, slots) == sizeof(SharedRegion) - sizeof(Slot) * kCapacity,
+              "Shared header must have a stable contiguous layout");
+static_assert(sizeof(Slot) <= (std::numeric_limits<std::uint32_t>::max)(),
+              "Slot size must fit the ABI field");
+static_assert(sizeof(SharedRegion) <= (std::numeric_limits<std::uint32_t>::max)(),
+              "Region size must fit the ABI field");
 
 class UniqueHandle
 {
@@ -201,8 +212,12 @@ int consume(const wchar_t* mappingName, const wchar_t* readyName, const wchar_t*
     UniqueHandle ready(OpenEventW(EVENT_MODIFY_STATE, FALSE, readyName));
     if (!ready) return 16;
 
-    if (shared->magic != kMagic || shared->version != 1 ||
-        shared->slotCount != kCapacity)
+    if (shared->magic != kMagic || shared->version != 2 ||
+        shared->headerSize != offsetof(SharedRegion, slots) ||
+        shared->slotCount != kCapacity ||
+        shared->slotSize != sizeof(Slot) ||
+        shared->sampleCount != kSamples ||
+        shared->reserved != 0)
         return 13;
 
     UniqueHandle progress(OpenEventW(EVENT_MODIFY_STATE, FALSE, progressName));
@@ -296,8 +311,12 @@ bool produce(bool malformedHeader, bool exitAfterReady, bool terminateAfterReady
 
     ZeroMemory(shared, sizeof(*shared));
     shared->magic = kMagic;
-    shared->version = malformedHeader ? 999u : 1u;
+    shared->version = malformedHeader ? 999u : 2u;
+    shared->headerSize = static_cast<std::uint32_t>(offsetof(SharedRegion, slots));
     shared->slotCount = static_cast<std::uint32_t>(kCapacity);
+    shared->slotSize = static_cast<std::uint32_t>(sizeof(Slot));
+    shared->sampleCount = static_cast<std::uint32_t>(kSamples);
+    shared->reserved = 0;
     for (std::uint64_t i = 0; i < kCapacity; ++i)
         InterlockedExchange64(&shared->slots[i].sequence, static_cast<LONG64>(i));
 
