@@ -96,6 +96,11 @@ if(VOICE_STUDIO_BUILD_SMOKE_TESTS)
     # Windows-only, standalone cross-process shared-memory proof of concept.
     # This is a test executable; it is not loaded or launched by the VST3.
     if(WIN32 AND CMAKE_SIZEOF_VOID_P EQUAL 8)
+        add_executable(VoiceStudioAudioBlockSlotSyncTest tests/AudioBlockSlotSyncTest.cpp)
+        target_include_directories(VoiceStudioAudioBlockSlotSyncTest PRIVATE Source)
+        target_compile_features(VoiceStudioAudioBlockSlotSyncTest PRIVATE cxx_std_17)
+        add_test(NAME VoiceStudioAudioBlockSlotSyncTest COMMAND VoiceStudioAudioBlockSlotSyncTest)
+
         add_executable(VoiceStudioSharedMemoryPocTest tests/WindowsSharedMemoryPocTest.cpp)
         target_include_directories(VoiceStudioSharedMemoryPocTest PRIVATE Source)
         target_compile_features(VoiceStudioSharedMemoryPocTest PRIVATE cxx_std_17)
