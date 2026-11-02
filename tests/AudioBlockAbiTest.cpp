@@ -93,9 +93,12 @@ void testRejectsNonFiniteSamples()
 {
     auto slot = validSlot();
     CHECK(hasFiniteAudioBlockPayload(slot));
+    slot.state = static_cast<std::int32_t>(AudioBlockSlotState::reading);
+    CHECK(hasFiniteAudioBlockPayload(slot));
     slot.samples[0] = std::numeric_limits<float>::quiet_NaN();
     CHECK(!hasFiniteAudioBlockPayload(slot));
     slot = validSlot();
+    slot.state = static_cast<std::int32_t>(AudioBlockSlotState::reading);
     slot.samples[0] = std::numeric_limits<float>::infinity();
     CHECK(!hasFiniteAudioBlockPayload(slot));
 }
