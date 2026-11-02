@@ -13,14 +13,42 @@ VoiceStudioAudioProcessor::APVTS::ParameterLayout VoiceStudioAudioProcessor::cre
 {
     APVTS::ParameterLayout layout;
     layout.add(std::make_unique<juce::AudioParameterBool>("aiEnabled", "AI Voice", false));
-    layout.add(std::make_unique<juce::AudioParameterBool>("dspEnabled", "DSP Effects", false));
-    layout.add(std::make_unique<juce::AudioParameterChoice>(
-        "voicePreset", "Voice Preset",
-        juce::StringArray { "Radio Operator", "Deep Male", "Female Voice", "Robot", "Demon", "Anime Voice" }, 0));
+    layout.add(std::make_unique<juce::AudioParameterBool>("dspEnabled", "DSP Effects", true));
+    layout.add(std::make_unique<juce::AudioParameterBool>("highPass", "High-pass Filter", true));
+    layout.add(std::make_unique<juce::AudioParameterBool>("presence", "Presence EQ", true));
+    layout.add(std::make_unique<juce::AudioParameterBool>("compressor", "Compressor", true));
+    layout.add(std::make_unique<juce::AudioParameterFloat>(
+        "outputGain", "Output Level", juce::NormalisableRange<float>(-18.0f, 12.0f, 0.1f), 0.0f));
     return layout;
 }
 
-void VoiceStudioAudioProcessor::prepareToPlay(double, int) {}
+void VoiceStudioAudioProcessor::prepareToPlay(double sampleRate, int samplesPerBlock)
+{
+    juce::dsp::ProcessSpec spec;
+    spec.sampleRate = sampleRate;
+    spec.maximumBlockSize = static_cast<juce::uint32>(juce::jmax(1, samplesPerBlock));
+    spec.numChannels = 1;
+
+    const auto hpCoefficients = juce::dsp::IIR::Coefficients<float>::makeHighPass(sampleRate, 80.0f);
+    const auto presenceCoefficients = juce::dsp::IIR::Coefficients<float>::makePeakFilter(
+        sampleRate, 3200.0f, 0.9f, juce::Decibels::decibelsToGain(2.5f));
+
+    for (int ch = 0; ch < 2; ++ch)
+    {
+        highPassFilters[static_cast<size_t>(ch)].reset();
+        presenceFilters[static_cast<size_t>(ch)].reset();
+        highPassFilters[static_cast<size_t>(ch)].prepare(spec);
+        presenceFilters[static_cast<size_t>(ch)].prepare(spec);
+        highPassFilters[static_cast<size_t>(ch)].coefficients = hpCoefficients;
+        presenceFilters[static_cast<size_t>(ch)].coefficients = presenceCoefficients;
+        compressors[static_cast<size_t>(ch)].reset();
+        compressors[static_cast<size_t>(ch)].prepare(spec);
+        compressors[static_cast<size_t>(ch)].setThreshold(-18.0f);
+        compressors[static_cast<size_t>(ch)].setRatio(3.0f);
+        compressors[static_cast<size_t>(ch)].setAttack(8.0f);
+        compressors[static_cast<size_t>(ch)].setRelease(100.0f);
+    }
+}
 
 bool VoiceStudioAudioProcessor::isBusesLayoutSupported(const BusesLayout& layouts) const
 {
@@ -33,9 +61,36 @@ bool VoiceStudioAudioProcessor::isBusesLayoutSupported(const BusesLayout& layout
 void VoiceStudioAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::MidiBuffer&)
 {
     juce::ScopedNoDenormals guard;
-    // Safe prototype: transparent pass-through. AI is not implemented or started.
-    // DSP and AI switches are UI/state placeholders until their processors are implemented.
-    juce::ignoreUnused(buffer);
+    const int channels = juce::jmin(buffer.getNumChannels(), 2);
+
+    if (!parameters.getRawParameterValue("dspEnabled")->load())
+        return;
+
+    const bool useHighPass = parameters.getRawParameterValue("highPass")->load() > 0.5f;
+    const bool usePresence = parameters.getRawParameterValue("presence")->load() > 0.5f;
+    const bool useCompressor = parameters.getRawParameterValue("compressor")->load() > 0.5f;
+    const float gain = juce::Decibels::decibelsToGain(
+        parameters.getRawParameterValue("outputGain")->load());
+
+    for (int ch = 0; ch < channels; ++ch)
+    {
+        auto* data = buffer.getWritePointer(ch);
+        auto& hp = highPassFilters[static_cast<size_t>(ch)];
+        auto& eq = presenceFilters[static_cast<size_t>(ch)];
+        auto& comp = compressors[static_cast<size_t>(ch)];
+
+        for (int i = 0; i < buffer.getNumSamples(); ++i)
+        {
+            float sample = data[i];
+            if (useHighPass)
+                sample = hp.processSample(sample);
+            if (usePresence)
+                sample = eq.processSample(sample);
+            if (useCompressor)
+                sample = comp.processSample(ch, sample);
+            data[i] = sample * gain;
+        }
+    }
 }
 
 juce::AudioProcessorEditor* VoiceStudioAudioProcessor::createEditor()
