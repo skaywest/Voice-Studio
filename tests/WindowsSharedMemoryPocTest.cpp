@@ -317,15 +317,18 @@ bool produce(int malformedHeaderField, bool exitAfterReady, bool terminateAfterR
 
     ZeroMemory(shared, sizeof(*shared));
     shared->magic = kMagic;
-    shared->version = malformedHeaderField == 1 ? 999u : 2u;
-    if (malformedHeaderField == 2) shared->slotSize = 0;
-    if (malformedHeaderField == 3) shared->sampleCount = 0;
-    if (malformedHeaderField == 4) shared->reserved = 0xFFFFFFFFu;
+    shared->version = 2u;
     shared->headerSize = static_cast<std::uint32_t>(offsetof(SharedRegion, slots));
     shared->slotCount = static_cast<std::uint32_t>(kCapacity);
     shared->slotSize = static_cast<std::uint32_t>(sizeof(Slot));
     shared->sampleCount = static_cast<std::uint32_t>(kSamples);
     shared->reserved = 0;
+
+    // Apply deliberate corruption only after initializing the valid ABI.
+    if (malformedHeaderField == 1) shared->version = 999u;
+    if (malformedHeaderField == 2) shared->slotSize = 0;
+    if (malformedHeaderField == 3) shared->sampleCount = 0;
+    if (malformedHeaderField == 4) shared->reserved = 0xFFFFFFFFu;
     for (std::uint64_t i = 0; i < kCapacity; ++i)
         InterlockedExchange64(&shared->slots[i].sequence, static_cast<LONG64>(i));
 
