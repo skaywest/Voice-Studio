@@ -59,6 +59,7 @@ option(VOICE_STUDIO_BUILD_SMOKE_TESTS "Build headless processor smoke tests" ON)
 if(VOICE_STUDIO_BUILD_SMOKE_TESTS)
     enable_testing()
     add_executable(VoiceStudioProcessorSmokeTest tests/ProcessorSmokeTest.cpp)
+    target_include_directories(VoiceStudioProcessorSmokeTest PRIVATE Source)
     target_compile_features(VoiceStudioProcessorSmokeTest PRIVATE cxx_std_17)
     target_compile_definitions(VoiceStudioProcessorSmokeTest PRIVATE
         JUCE_WEB_BROWSER=0
