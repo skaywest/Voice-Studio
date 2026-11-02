@@ -114,6 +114,21 @@ if(VOICE_STUDIO_BUILD_SMOKE_TESTS)
     # Windows-only, standalone cross-process shared-memory proof of concept.
     # This is a test executable; it is not loaded or launched by the VST3.
     if(WIN32 AND CMAKE_SIZEOF_VOID_P EQUAL 8)
+        # Standalone protocol Worker; no inference engine is linked yet.
+        add_executable(VoiceStudioWorker Source/AudioIpc/WindowsWorkerMain.cpp)
+        target_include_directories(VoiceStudioWorker PRIVATE Source)
+        target_compile_features(VoiceStudioWorker PRIVATE cxx_std_17)
+        target_link_libraries(VoiceStudioWorker PRIVATE advapi32)
+
+        # Exercise the real controller against the separately launched Worker.
+        add_executable(VoiceStudioWindowsWorkerControllerTest tests/WindowsWorkerControllerTest.cpp)
+        target_include_directories(VoiceStudioWindowsWorkerControllerTest PRIVATE Source)
+        target_compile_features(VoiceStudioWindowsWorkerControllerTest PRIVATE cxx_std_17)
+        target_link_libraries(VoiceStudioWindowsWorkerControllerTest PRIVATE advapi32)
+        add_test(NAME VoiceStudioWindowsWorkerControllerTest
+                 COMMAND VoiceStudioWindowsWorkerControllerTest $<TARGET_FILE:VoiceStudioWorker>)
+        set_tests_properties(VoiceStudioWindowsWorkerControllerTest PROPERTIES TIMEOUT 20)
+
         # Control-thread-only Windows Worker process owner and lifecycle smoke test.
         add_executable(VoiceStudioWindowsWorkerProcessTest tests/WindowsWorkerProcessTest.cpp)
         target_include_directories(VoiceStudioWindowsWorkerProcessTest PRIVATE Source)
