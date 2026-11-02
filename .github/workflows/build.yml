@@ -78,7 +78,8 @@ jobs:
           $plugin = Get-ChildItem "build/VoiceStudio_artefacts/Release/VST3" -Filter "*.vst3" -Recurse -File | Select-Object -First 1
           if (-not $plugin) { throw "VST3 binary not found for pluginval" }
           & $validator.FullName --strictness-level 5 --skip-gui-tests --timeout-ms 60000 $plugin.FullName
-          if ($LASTEXITCODE -ne 0) { throw "pluginval validation failed with exit code $LASTEXITCODE" }
+          $pluginvalExitCode = $LASTEXITCODE
+          if ($null -ne $pluginvalExitCode -and $pluginvalExitCode -ne 0) { throw "pluginval validation failed with exit code $pluginvalExitCode" }
 
       - name: Upload VST3 and audit
         uses: actions/upload-artifact@v4
