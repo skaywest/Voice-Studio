@@ -271,7 +271,7 @@ bool produce(bool malformedHeader, bool exitAfterReady, bool terminateAfterReady
     Security security;
     if (!security.initialize())
     {
-        std::fwprintf(stderr, L"Could not create current-user security descriptor\n");
+        std::fwprintf(stderr, L"Could not create current-user security descriptor\\n");
         return false;
     }
 
@@ -279,22 +279,16 @@ bool produce(bool malformedHeader, bool exitAfterReady, bool terminateAfterReady
     if (!randomName(mappingName, readyName))
         return false;
 
-    HANDLE mapping = CreateFileMappingW(INVALID_HANDLE_VALUE, &security.attributes,
-                                        PAGE_READWRITE, 0, sizeof(SharedRegion),
-                                        mappingName.c_str());
+    UniqueHandle mapping(CreateFileMappingW(INVALID_HANDLE_VALUE, &security.attributes,
+                                            PAGE_READWRITE, 0, sizeof(SharedRegion),
+                                            mappingName.c_str()));
     if (!mapping || GetLastError() == ERROR_ALREADY_EXISTS)
-    {
-        if (mapping) CloseHandle(mapping);
         return false;
-    }
 
-    auto* shared = static_cast<SharedRegion*>(
-        MapViewOfFile(mapping, FILE_MAP_ALL_ACCESS, 0, 0, sizeof(SharedRegion)));
-    if (!shared)
-    {
-        CloseHandle(mapping);
+    UniqueView view(MapViewOfFile(mapping.get(), FILE_MAP_ALL_ACCESS, 0, 0, sizeof(SharedRegion)));
+    if (!view)
         return false;
-    }
+    auto* shared = static_cast<SharedRegion*>(view.get());
 
     ZeroMemory(shared, sizeof(*shared));
     shared->magic = kMagic;
@@ -304,28 +298,16 @@ bool produce(bool malformedHeader, bool exitAfterReady, bool terminateAfterReady
         InterlockedExchange64(&shared->slots[i].sequence, static_cast<LONG64>(i));
 
     const std::wstring progressName = mappingName + L"_progress";
-    HANDLE progress = CreateEventW(&security.attributes, TRUE, FALSE, progressName.c_str());
-    HANDLE ready = CreateEventW(&security.attributes, TRUE, FALSE, readyName.c_str());
+    UniqueHandle progress(CreateEventW(&security.attributes, TRUE, FALSE, progressName.c_str()));
+    UniqueHandle ready(CreateEventW(&security.attributes, TRUE, FALSE, readyName.c_str()));
     if (!ready || !progress)
-    {
-        if (ready) CloseHandle(ready);
-        if (progress) CloseHandle(progress);
-        UnmapViewOfFile(shared);
-        CloseHandle(mapping);
         return false;
-    }
 
     std::array<wchar_t, 32768> executable {};
     const DWORD length = GetModuleFileNameW(nullptr, executable.data(),
                                             static_cast<DWORD>(executable.size()));
     if (length == 0 || length >= executable.size())
-    {
-        CloseHandle(ready);
-        CloseHandle(progress);
-        UnmapViewOfFile(shared);
-        CloseHandle(mapping);
         return false;
-    }
 
     const std::wstring command = quote(executable.data()) + L" --consume " +
                                  quote(mappingName) + L" " + quote(readyName) + L" " +
@@ -337,23 +319,20 @@ bool produce(bool malformedHeader, bool exitAfterReady, bool terminateAfterReady
     std::wstring mutableCommand = command;
     if (!CreateProcessW(executable.data(), mutableCommand.data(), nullptr, nullptr, FALSE,
                         CREATE_NO_WINDOW, nullptr, nullptr, &startup, &process))
-    {
-        CloseHandle(ready);
-        CloseHandle(progress);
-        UnmapViewOfFile(shared);
-        CloseHandle(mapping);
         return false;
-    }
 
-    HANDLE handshakeHandles[] { ready, process.hProcess };
+    UniqueHandle childProcess(process.hProcess);
+    UniqueHandle childThread(process.hThread);
+
+    HANDLE handshakeHandles[] { ready.get(), childProcess.get() };
     const DWORD handshake = WaitForMultipleObjects(2, handshakeHandles, FALSE, kTimeoutMs);
     bool ok = handshake == WAIT_OBJECT_0;
     if (ok && terminateAfterReady)
     {
         // The ready event proves the child opened the mapping and validated its
         // header. Kill it abruptly before any transfer to exercise crash detection.
-        if (!TerminateProcess(process.hProcess, 77) ||
-            WaitForSingleObject(process.hProcess, kTimeoutMs) != WAIT_OBJECT_0)
+        if (!TerminateProcess(childProcess.get(), 77) ||
+            WaitForSingleObject(childProcess.get(), kTimeoutMs) != WAIT_OBJECT_0)
             ok = false;
     }
 
@@ -363,7 +342,7 @@ bool produce(bool malformedHeader, bool exitAfterReady, bool terminateAfterReady
            position < kBlockCount)
     {
         if (GetTickCount64() >= transferDeadline ||
-            WaitForSingleObject(process.hProcess, 0) != WAIT_TIMEOUT)
+            WaitForSingleObject(childProcess.get(), 0) != WAIT_TIMEOUT)
         {
             ok = false;
             break;
@@ -390,12 +369,12 @@ bool produce(bool malformedHeader, bool exitAfterReady, bool terminateAfterReady
             break;
         if (terminateDuringTransfer && position == 1)
         {
-            HANDLE progressHandles[] { progress, process.hProcess };
+            HANDLE progressHandles[] { progress.get(), childProcess.get() };
             const DWORD progressWait = WaitForMultipleObjects(2, progressHandles, FALSE, kTimeoutMs);
             if (progressWait == WAIT_OBJECT_0)
             {
-                if (!TerminateProcess(process.hProcess, 78) ||
-                    WaitForSingleObject(process.hProcess, kTimeoutMs) != WAIT_OBJECT_0)
+                if (!TerminateProcess(childProcess.get(), 78) ||
+                    WaitForSingleObject(childProcess.get(), kTimeoutMs) != WAIT_OBJECT_0)
                     ok = false;
             }
             else
@@ -404,17 +383,17 @@ bool produce(bool malformedHeader, bool exitAfterReady, bool terminateAfterReady
         }
     }
 
-    const DWORD waitResult = WaitForSingleObject(process.hProcess, kTimeoutMs);
+    const DWORD waitResult = WaitForSingleObject(childProcess.get(), kTimeoutMs);
     if (waitResult != WAIT_OBJECT_0)
     {
-        TerminateProcess(process.hProcess, 2);
-        WaitForSingleObject(process.hProcess, 5000);
+        TerminateProcess(childProcess.get(), 2);
+        WaitForSingleObject(childProcess.get(), 5000);
         ok = false;
     }
     else
     {
         DWORD exitCode = 1;
-        const BOOL gotExitCode = GetExitCodeProcess(process.hProcess, &exitCode);
+        const BOOL gotExitCode = GetExitCodeProcess(childProcess.get(), &exitCode);
         const DWORD expectedExit = malformedHeader ? 13u :
                                    (exitAfterReady ? 20u :
                                     (terminateAfterReady ? 77u :
@@ -435,24 +414,17 @@ bool produce(bool malformedHeader, bool exitAfterReady, bool terminateAfterReady
         }
     }
 
-    CloseHandle(process.hThread);
-    CloseHandle(process.hProcess);
-    CloseHandle(ready);
-    CloseHandle(progress);
-    UnmapViewOfFile(shared);
-    CloseHandle(mapping);
-
     if (ok && malformedHeader)
-        std::wprintf(L"PASS: malformed shared-memory header rejected with exit code 13\n");
+        std::wprintf(L"PASS: malformed shared-memory header rejected with exit code 13\\n");
     else if (ok && exitAfterReady)
-        std::wprintf(L"PASS: worker cleanly exited after handshake with exit code 20\n");
+        std::wprintf(L"PASS: worker cleanly exited after handshake with exit code 20\\n");
     else if (ok && terminateAfterReady)
-        std::wprintf(L"PASS: worker was forcibly terminated after handshake; exit code 77 observed\n");
+        std::wprintf(L"PASS: worker was forcibly terminated after handshake; exit code 77 observed\\n");
     else if (ok)
-        std::wprintf(L"PASS: %llu blocks transferred and verified across two processes\n",
+        std::wprintf(L"PASS: %llu blocks transferred and verified across two processes\\n",
                      static_cast<unsigned long long>(kBlockCount));
     else
-        std::fwprintf(stderr, L"FAIL: shared-memory scenario did not meet its expected outcome\n");
+        std::fwprintf(stderr, L"FAIL: shared-memory scenario did not meet its expected outcome\\n");
     return ok;
 }
 } // namespace
