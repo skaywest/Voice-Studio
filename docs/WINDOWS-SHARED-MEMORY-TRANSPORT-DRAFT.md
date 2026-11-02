@@ -154,3 +154,18 @@ Only after these tests pass should a minimal transport prototype be considered f
 - Confirm planar layout with the eventual inference engine before freezing ABI v1.
 
 No inference engine, runtime, model, installer, or user-PC change is authorized by this draft.
+
+
+## 11. Windows API review notes (Microsoft Learn)
+
+The following platform details have been checked against the Windows API documentation. They narrow the design but do not replace implementation review or cross-process tests.
+
+- A page-file-backed mapping is created with `CreateFileMapping(INVALID_HANDLE_VALUE, ...)`; the mapping size must be supplied. Each process obtains a view with `MapViewOfFile`. Named mapping objects are shared through the object name, and all views/handles must be released during teardown. See [Sharing Files and Memory](https://learn.microsoft.com/en-us/windows/win32/memory/sharing-files-and-memory), [CreateFileMapping](https://learn.microsoft.com/en-us/windows/win32/api/winbase/nf-winbase-createfilemappinga), and [MapViewOfFile](https://learn.microsoft.com/en-us/windows/win32/api/memoryapi/nf-memoryapi-mapviewoffile).
+- Do not create a `Global\\` mapping for this same-session design. Prefer a session-local `Local\\` name (or a securely inherited/duplicated handle if later chosen). Creating a global mapping from a non-session-zero process can require `SeCreateGlobalPrivilege`; no privilege elevation is acceptable here. Object names remain unpredictable per session and are not credentials.
+- Passing a null security-attributes pointer gives the mapping a default security descriptor derived from the creator's primary/impersonation token. The implementation must instead construct and pass an explicit security descriptor/DACL granting only the current user SID and any strictly necessary system identity. Review the resulting descriptor, not just the SDDL string, in tests. See [File-mapping security and access rights](https://learn.microsoft.com/en-us/windows/desktop/Memory/file-mapping-security-and-access-rights).
+- `InterlockedCompareExchange64` requires a 64-bit-aligned destination and supplies a full memory barrier. It can be used as an atomic read by comparing/exchanging zero with zero, but this idiom must be encapsulated and tested; publication/release should use a documented 64-bit Interlocked operation with the same alignment discipline. No plain volatile load/store is permitted for shared ownership state. See [InterlockedCompareExchange64](https://learn.microsoft.com/en-us/windows/win32/api/winnt/nf-winnt-interlockedcompareexchange64) and [Interlocked Variable Access](https://learn.microsoft.com/en-gb/windows/win32/sync/interlocked-variable-access).
+- Mapping creation/opening, ACL setup, pipe connection, and all handle operations stay on the control thread. The audio callback receives only an already validated mapped view and performs bounded slot operations.
+
+### Updated implementation gate
+
+Before coding the shared ring, write a small MSVC x64 proof-of-concept that tests the exact Interlocked read/publish/release wrappers on aligned mapped memory from two independent processes. Verify the compiler emits the intended operations and run the million-block ordering test plus forced process termination. If the read wrapper or memory-order proof is unclear, stop and revise the design rather than substituting ordinary C++ atomics or volatile accesses. This proof-of-concept must not be loaded by the VST3 or launched automatically.
