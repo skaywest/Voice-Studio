@@ -67,6 +67,5 @@ if(VOICE_STUDIO_BUILD_SMOKE_TESTS)
         JUCE_VST3_CAN_REPLACE_VST2=0
     )
     target_link_libraries(VoiceStudioProcessorSmokeTest PRIVATE VoiceStudio)
-    juce_generate_juce_header(VoiceStudioProcessorSmokeTest)
     add_test(NAME VoiceStudioProcessorSmokeTest COMMAND VoiceStudioProcessorSmokeTest)
 endif()
