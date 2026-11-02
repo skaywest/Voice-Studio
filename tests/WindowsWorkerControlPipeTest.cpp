@@ -65,8 +65,7 @@ static bool runSeparateProcessExchange(const std::wstring& executable,
         return false;
 
     WindowsWorkerProcess worker;
-    const std::wstring arguments = (crashBeforeReply ? L"--pipe-crash-child " : L"--pipe-child ") +
-                                   std::wstring(L"\\\"") + pipeName + L"\\\"";
+    const std::wstring arguments = (crashBeforeReply ? L"--pipe-crash-child " : L"--pipe-child ") + pipeName;
     if (!worker.launch(executable, arguments))
         return false;
 
