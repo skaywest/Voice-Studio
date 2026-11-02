@@ -99,6 +99,12 @@ if(VOICE_STUDIO_BUILD_SMOKE_TESTS)
     target_compile_features(VoiceStudioWorkerControlAbiTest PRIVATE cxx_std_17)
     add_test(NAME VoiceStudioWorkerControlAbiTest COMMAND VoiceStudioWorkerControlAbiTest)
 
+    # Control-thread worker lifecycle policy and fallback behavior.
+    add_executable(VoiceStudioWorkerLifecycleTest tests/WorkerLifecycleTest.cpp)
+    target_include_directories(VoiceStudioWorkerLifecycleTest PRIVATE Source)
+    target_compile_features(VoiceStudioWorkerLifecycleTest PRIVATE cxx_std_17)
+    add_test(NAME VoiceStudioWorkerLifecycleTest COMMAND VoiceStudioWorkerLifecycleTest)
+
     # Windows-only, standalone cross-process shared-memory proof of concept.
     # This is a test executable; it is not loaded or launched by the VST3.
     if(WIN32 AND CMAKE_SIZEOF_VOID_P EQUAL 8)
