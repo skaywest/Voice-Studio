@@ -47,7 +47,9 @@ public:
             return false;
         }
 
-        const std::wstring audioMappingName = pipeName + L"_audio";
+        const std::wstring audioMappingName = L"Local\\VoiceStudioAudio-" +
+            std::to_wstring(GetCurrentProcessId()) + L"-" +
+            std::to_wstring(coordinator.currentGeneration());
         if (!audioMapping.createServer(audioMappingName))
         {
             pipe.close();
@@ -63,6 +65,7 @@ public:
         if (!process.launch(executablePath, args))
         {
             pipe.close();
+            audioMapping.close();
             coordinator.workerExited();
             return false;
         }
