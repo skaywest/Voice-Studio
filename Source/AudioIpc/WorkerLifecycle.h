@@ -58,6 +58,11 @@ public:
 
     bool acceptStatus(const WorkerStatusMessage& status) noexcept
     {
+        // Once a session is disabled or faulted, late pipe messages from that
+        // generation must never revive it or refresh its heartbeat.
+        if (state == WorkerLifecycleState::disabled ||
+            state == WorkerLifecycleState::faulted)
+            return false;
         if (!hasValidWorkerStatus(status) || status.generation != generation ||
             status.requestId != requestId)
             return false;
