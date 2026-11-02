@@ -11,6 +11,7 @@
 #include <limits>
 #include <string>
 #include <type_traits>
+#include <vector>
 
 #pragma comment(lib, "bcrypt.lib")
 #pragma comment(lib, "advapi32.lib")
@@ -60,7 +61,12 @@ struct Security
             return false;
         }
 
-        std::string storage(bytes, '\0');
+        // TOKEN_USER contains pointers and must be suitably aligned. A byte
+        // string only guarantees char alignment, so use max_align_t storage.
+        const std::size_t wordCount =
+            (static_cast<std::size_t>(bytes) + sizeof(std::max_align_t) - 1) /
+            sizeof(std::max_align_t);
+        std::vector<std::max_align_t> storage(wordCount);
         auto* user = reinterpret_cast<TOKEN_USER*>(storage.data());
         const bool queried = GetTokenInformation(token, TokenUser, user, bytes, &bytes) != FALSE;
         CloseHandle(token);
@@ -461,7 +467,7 @@ int wmain(int argc, wchar_t** argv)
         !malformedHeader && !exitAfterReady && !terminateAfterReady &&
         !terminateDuringTransfer && !corruptFirstBlock))
     {
-        std::fwprintf(stderr, L"Usage: VoiceStudioSharedMemoryPocTest.exe [--malformed-header|--exit-after-ready|--terminate-after-ready]\n");
+        std::fwprintf(stderr, L"Usage: VoiceStudioSharedMemoryPocTest.exe [--malformed-header|--exit-after-ready|--terminate-after-ready|--terminate-during-transfer|--corrupt-first-block]\n");
         return 2;
     }
     return produce(malformedHeader, exitAfterReady, terminateAfterReady,
