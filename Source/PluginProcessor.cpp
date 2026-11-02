@@ -29,6 +29,10 @@ void VoiceStudioAudioProcessor::prepareToPlay(double sampleRate, int samplesPerB
     spec.maximumBlockSize = static_cast<juce::uint32>(juce::jmax(1, samplesPerBlock));
     spec.numChannels = 1;
 
+    outputGainSmoother.reset(sampleRate, 0.020);
+    outputGainSmoother.setCurrentAndTargetValue(juce::Decibels::decibelsToGain(
+        parameters.getRawParameterValue("outputGain")->load()));
+
     const auto hpCoefficients = juce::dsp::IIR::Coefficients<float>::makeHighPass(sampleRate, 80.0f);
     const auto presenceCoefficients = juce::dsp::IIR::Coefficients<float>::makePeakFilter(
         sampleRate, 3200.0f, 0.9f, juce::Decibels::decibelsToGain(2.5f));
@@ -64,13 +68,20 @@ void VoiceStudioAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, j
     const int channels = juce::jmin(buffer.getNumChannels(), 2);
 
     if (!parameters.getRawParameterValue("dspEnabled")->load())
+    {
+        // Keep bypass bit-transparent and synchronize the smoother so enabling
+        // DSP later does not ramp from an obsolete gain value.
+        outputGainSmoother.setCurrentAndTargetValue(juce::Decibels::decibelsToGain(
+            parameters.getRawParameterValue("outputGain")->load()));
         return;
+    }
 
     const bool useHighPass = parameters.getRawParameterValue("highPass")->load() > 0.5f;
     const bool usePresence = parameters.getRawParameterValue("presence")->load() > 0.5f;
     const bool useCompressor = parameters.getRawParameterValue("compressor")->load() > 0.5f;
-    const float gain = juce::Decibels::decibelsToGain(
+    const float targetGain = juce::Decibels::decibelsToGain(
         parameters.getRawParameterValue("outputGain")->load());
+    outputGainSmoother.setTargetValue(targetGain);
 
     for (int ch = 0; ch < channels; ++ch)
     {
@@ -88,7 +99,7 @@ void VoiceStudioAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, j
                 sample = eq.processSample(sample);
             if (useCompressor)
                 sample = comp.processSample(0, sample);
-            data[i] = sample * gain;
+            data[i] = sample * outputGainSmoother.getNextValue();
         }
     }
 }
