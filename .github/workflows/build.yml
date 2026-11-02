@@ -42,11 +42,20 @@ jobs:
           $imports = & dumpbin /nologo /imports $plugin.FullName 2>&1
           $imports | Out-File -FilePath network-import-audit.txt -Encoding utf8
           if ($LASTEXITCODE -ne 0) { throw "dumpbin import inspection failed" }
-          if ($imports -match "(?im)^\s*(WININET|WS2_32)\.dll\s*$") {
-            throw "Network DLL import remains in VST3 binary"
+
+          $networkDllPattern = "(?im)^\s*(WININET|WS2_32|WINHTTP|URLMON|DNSAPI|WSOCK32|MSWSOCK|WEBIO|WLANAPI|RASAPI32)\.dll\s*$"
+          $networkApiPattern = "(?im)^\s*(InternetOpen|InternetConnect|HttpOpenRequest|HttpSendRequest|WinHttpOpen|WinHttpConnect|WinHttpSendRequest|URLDownloadToFile|DnsQuery|DnsQueryEx|socket|WSASocket|connect|getaddrinfo|GetAddrInfoW)\b"
+
+          $dllMatches = [regex]::Matches(($imports -join "`n"), $networkDllPattern)
+          $apiMatches = [regex]::Matches(($imports -join "`n"), $networkApiPattern)
+          if ($dllMatches.Count -gt 0 -or $apiMatches.Count -gt 0) {
+            Write-Host "Potential network imports detected:"
+            $dllMatches | ForEach-Object { Write-Host $_.Value }
+            $apiMatches | ForEach-Object { Write-Host $_.Value }
+            throw "Potential network-related imports remain in VST3 binary"
           }
-          Write-Host "PASS: no WININET.dll or WS2_32.dll imports found"
-      
+          Write-Host "PASS: no imports from the audited network DLLs or API names were found"
+
       - name: Upload VST3 and audit
         uses: actions/upload-artifact@v4
         with:
