@@ -127,9 +127,17 @@ public:
         if (process == nullptr)
             return;
         if (!hasExited())
-            terminate();
-        if (hasExited())
-            closeHandles();
+        {
+            // Destruction is control-thread-only. Closing the kill-on-close job
+            // is the final containment fallback; wait for process death before
+            // releasing the process handle or shared-memory ownership.
+            if (job != nullptr)
+                CloseHandle(job);
+            job = nullptr;
+            if (!hasExited())
+                WaitForSingleObject(process, INFINITE);
+        }
+        closeHandles();
     }
 
     DWORD id() const noexcept { return processId; }
