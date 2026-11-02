@@ -5,8 +5,10 @@ on:
   push:
     branches:
       - main
+      - experiment/no-network-juce
     paths:
       - "CMakeLists.txt"
+      - "cmake/**"
       - "README.md"
       - "Source/**"
       - ".github/workflows/build.yml"
