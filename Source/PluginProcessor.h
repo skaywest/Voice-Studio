@@ -1,5 +1,6 @@
 #pragma once
 #include <JuceHeader.h>
+#include <array>
 
 class VoiceStudioAudioProcessor final : public juce::AudioProcessor
 {
@@ -29,5 +30,8 @@ public:
 
 private:
     static APVTS::ParameterLayout createParameterLayout();
+    std::array<juce::dsp::IIR::Filter<float>, 2> highPassFilters;
+    std::array<juce::dsp::IIR::Filter<float>, 2> presenceFilters;
+    std::array<juce::dsp::Compressor<float>, 2> compressors;
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(VoiceStudioAudioProcessor)
 };
