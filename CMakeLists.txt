@@ -66,6 +66,12 @@ if(VOICE_STUDIO_BUILD_SMOKE_TESTS)
         JUCE_USE_CURL=0
         JUCE_VST3_CAN_REPLACE_VST2=0
     )
-    target_link_libraries(VoiceStudioProcessorSmokeTest PRIVATE VoiceStudio)
+    # VoiceStudio keeps JUCE modules private; the standalone test compiles the
+    # processor header directly, so it must receive those module include paths too.
+    target_link_libraries(VoiceStudioProcessorSmokeTest PRIVATE
+        VoiceStudio
+        juce::juce_audio_utils
+        juce::juce_dsp
+    )
     add_test(NAME VoiceStudioProcessorSmokeTest COMMAND VoiceStudioProcessorSmokeTest)
 endif()
