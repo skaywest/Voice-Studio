@@ -67,6 +67,19 @@ jobs:
           }
           Write-Host "PASS: no imports from the expanded audited network DLL/API list were found"
 
+      - name: Validate VST3 with pluginval
+        shell: pwsh
+        run: |
+          $releaseUrl = "https://github.com/Tracktion/pluginval/releases/download/v1.0.4/pluginval_Windows.zip"
+          Invoke-WebRequest -Uri $releaseUrl -OutFile pluginval.zip
+          Expand-Archive -Path pluginval.zip -DestinationPath pluginval -Force
+          $validator = Get-ChildItem pluginval -Filter "pluginval.exe" -Recurse -File | Select-Object -First 1
+          if (-not $validator) { throw "pluginval.exe was not found in the pinned release archive" }
+          $plugin = Get-ChildItem "build/VoiceStudio_artefacts/Release/VST3" -Filter "*.vst3" -Recurse -File | Select-Object -First 1
+          if (-not $plugin) { throw "VST3 binary not found for pluginval" }
+          & $validator.FullName --strictness-level 5 --skip-gui-tests --timeout-ms 60000 $plugin.FullName
+          if ($LASTEXITCODE -ne 0) { throw "pluginval validation failed with exit code $LASTEXITCODE" }
+
       - name: Upload VST3 and audit
         uses: actions/upload-artifact@v4
         with:
