@@ -69,7 +69,30 @@ int main()
             finite = finite && std::isfinite(buffer.getSample(channel, sample));
     expect(finite, "enabled DSP produces only finite samples");
 
+    // Verify the output gain numerically with all tone/dynamics stages disabled.
+    setParameter(processor, "highPass", 0.0f);
+    setParameter(processor, "presence", 0.0f);
+    setParameter(processor, "compressor", 0.0f);
     setParameter(processor, "outputGain", 6.0f);
+    setParameter(processor, "dspEnabled", 1.0f);
+    juce::AudioBuffer<float> gainBuffer(2, 64);
+    gainBuffer.clear();
+    for (int channel = 0; channel < gainBuffer.getNumChannels(); ++channel)
+        for (int sample = 0; sample < gainBuffer.getNumSamples(); ++sample)
+            gainBuffer.setSample(channel, sample, 0.1f);
+    processor.processBlock(gainBuffer, midi);
+    const float expectedGain = juce::Decibels::decibelsToGain(6.0f);
+    bool gainCorrect = true;
+    for (int channel = 0; channel < gainBuffer.getNumChannels(); ++channel)
+        for (int sample = 0; sample < gainBuffer.getNumSamples(); ++sample)
+            gainCorrect = gainCorrect && std::abs(gainBuffer.getSample(channel, sample) - 0.1f * expectedGain) < 0.0001f;
+    expect(gainCorrect, "output gain applies the requested +6 dB when other stages are disabled");
+
+    juce::AudioProcessor::BusesLayout monoLayout;
+    monoLayout.inputBuses.add(juce::AudioChannelSet::mono());
+    monoLayout.outputBuses.add(juce::AudioChannelSet::mono());
+    expect(processor.isBusesLayoutSupported(monoLayout), "matching mono input/output layout is supported");
+
     setParameter(processor, "dspEnabled", 0.0f);
     juce::MemoryBlock state;
     processor.getStateInformation(state);
