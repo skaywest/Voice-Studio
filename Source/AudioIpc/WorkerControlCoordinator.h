@@ -7,6 +7,8 @@
 
 namespace voice_studio::ipc
 {
+static_assert(std::atomic<bool>::is_always_lock_free,
+              "The audio-thread availability flag must be lock-free");
 // Control-thread facade joining lifecycle policy, command serialization and
 // real-time availability publication. All mutating methods are control-thread
 // only. The audio callback may call only audioConversionAvailable().
