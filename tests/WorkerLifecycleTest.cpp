@@ -46,16 +46,26 @@ int main()
     assert(!lifecycle.isAudioConversionAvailable());
 
     assert(lifecycle.userEnableAi() == WorkerLifecycleAction::sendStart);
+    assert(lifecycle.currentState() == WorkerLifecycleState::enabling);
+    assert(!lifecycle.isAudioConversionAvailable());
+    assert(lifecycle.acceptStatus(statusFor(lifecycle, WorkerState::processing, 300)));
     assert(lifecycle.currentState() == WorkerLifecycleState::running);
     assert(lifecycle.isAudioConversionAvailable());
-    assert(lifecycle.acceptStatus(statusFor(lifecycle, WorkerState::processing, 300)));
 
     assert(lifecycle.userDisableAi(400) == WorkerLifecycleAction::sendStop);
     assert(lifecycle.currentState() == WorkerLifecycleState::coolingDown);
     assert(!lifecycle.isAudioConversionAvailable());
+    // A successful Stop acknowledgement must not cancel the 30-second
+    // model-retention window or make the conversion path available.
+    assert(lifecycle.acceptStatus(statusFor(lifecycle, WorkerState::ready, 500)));
+    assert(lifecycle.currentState() == WorkerLifecycleState::coolingDown);
+    assert(!lifecycle.isAudioConversionAvailable());
     assert(lifecycle.tick(400 + WorkerLifecycle::kCooldownNs - 1) == WorkerLifecycleAction::none);
     assert(lifecycle.tick(400 + WorkerLifecycle::kCooldownNs) == WorkerLifecycleAction::sendUnloadNow);
-    assert(lifecycle.currentState() == WorkerLifecycleState::stopping);
+    assert(lifecycle.currentState() == WorkerLifecycleState::unloading);
+    assert(lifecycle.acceptStatus(statusFor(lifecycle, WorkerState::stopped,
+                                            400 + WorkerLifecycle::kCooldownNs + 1)));
+    assert(lifecycle.currentState() == WorkerLifecycleState::ready);
 
     assert(lifecycle.workerExited() == WorkerLifecycleAction::none);
     assert(lifecycle.currentState() == WorkerLifecycleState::faulted);
