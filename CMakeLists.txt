@@ -8,7 +8,13 @@ FetchContent_Declare(
     GIT_TAG 8.0.6
     GIT_SHALLOW TRUE
 )
-FetchContent_MakeAvailable(JUCE)
+FetchContent_GetProperties(JUCE)
+if(NOT juce_POPULATED)
+    FetchContent_Populate(JUCE)
+    include(cmake/DisableJuceNetworking.cmake)
+    add_compile_definitions(JUCE_VOICE_STUDIO_DISABLE_NETWORKING=1)
+    add_subdirectory(${juce_SOURCE_DIR} ${juce_BINARY_DIR} EXCLUDE_FROM_ALL)
+endif()
 
 juce_add_plugin(VoiceStudio
     COMPANY_NAME "Whynot Audio"
