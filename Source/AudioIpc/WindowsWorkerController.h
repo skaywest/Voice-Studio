@@ -73,12 +73,12 @@ public:
 
     bool enableAi(std::uint32_t timeoutMs = 30000) noexcept
     {
-        return execute(coordinator.enableAi(timeoutMs));
+        return execute(coordinator.enableAi(timeoutMs), timeoutMs);
     }
 
     bool disableAi(std::uint64_t nowNs, std::uint32_t timeoutMs = 30000) noexcept
     {
-        return execute(coordinator.disableAi(nowNs, timeoutMs));
+        return execute(coordinator.disableAi(nowNs, timeoutMs), timeoutMs);
     }
 
     // A false result means no valid status was received (timeout, disconnect,
@@ -117,14 +117,14 @@ public:
             handleWorkerExit();
             return false;
         }
-        return execute(coordinator.tick(nowNs, timeoutMs));
+        return execute(coordinator.tick(nowNs, timeoutMs), timeoutMs);
     }
 
     bool unloadNow(std::uint32_t timeoutMs = 30000) noexcept
     {
         if (!active)
             return false;
-        return execute(coordinator.unloadNow(), timeoutMs);
+        return execute(coordinator.unloadNow(timeoutMs), timeoutMs);
     }
 
     bool workerHasExited() const noexcept { return process.hasExited(); }
@@ -157,7 +157,8 @@ public:
     }
 
 private:
-    bool execute(const WorkerControlDecision& decision) noexcept
+    bool execute(const WorkerControlDecision& decision,
+                 std::uint32_t timeoutMs = 3000) noexcept
     {
         if (decision.action == WorkerLifecycleAction::none)
             return true;
@@ -165,7 +166,7 @@ private:
             return terminateAndFault();
         if (decision.action == WorkerLifecycleAction::launchWorker)
             return false;
-        if (!decision.hasCommand || !pipe.sendCommand(decision.command, 3000))
+        if (!decision.hasCommand || !pipe.sendCommand(decision.command, timeoutMs))
             return terminateAndFault();
         return true;
     }
