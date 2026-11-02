@@ -469,8 +469,18 @@ int wmain(int argc, wchar_t** argv)
         !malformedHeader && !exitAfterReady && !terminateAfterReady &&
         !terminateDuringTransfer && !corruptFirstBlock && !restartAfterCrash))
     {
-        std::fwprintf(stderr, L"Usage: VoiceStudioSharedMemoryPocTest.exe [--malformed-header|--exit-after-ready|--terminate-after-ready|--terminate-during-transfer|--corrupt-first-block]\n");
+        std::fwprintf(stderr, L"Usage: VoiceStudioSharedMemoryPocTest.exe [--malformed-header|--exit-after-ready|--terminate-after-ready|--terminate-during-transfer|--corrupt-first-block|--restart-after-crash]\n");
         return 2;
+    }
+    if (restartAfterCrash)
+    {
+        // produce() closes the first session resources before returning.
+        if (!produce(false, false, true, false, false))
+            return 1;
+        if (!produce(false, false, false, false, false))
+            return 1;
+        std::wprintf(L"PASS: fresh shared-memory session started after worker crash\\n");
+        return 0;
     }
     return produce(malformedHeader, exitAfterReady, terminateAfterReady,
                    terminateDuringTransfer, corruptFirstBlock) ? 0 : 1;
