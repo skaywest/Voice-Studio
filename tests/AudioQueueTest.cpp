@@ -386,17 +386,17 @@ namespace
 
         std::thread producer([&]
         {
-            for (std::uint64_t sequence = 0; sequence < blockCount; ++sequence)
+            std::uint64_t sequence = 0;
+            while (sequence < blockCount)
             {
                 Block block;
                 block.frames = 4;
                 block.channels = 1;
                 block.sequence = sequence;
-                if (!queue.tryPush(block))
-                {
-                    --sequence;
+                if (queue.tryPush(block))
+                    ++sequence;
+                else
                     std::this_thread::yield();
-                }
             }
             producerDone.store(true, std::memory_order_release);
         });
