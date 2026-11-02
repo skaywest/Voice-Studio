@@ -219,7 +219,12 @@ int consume(const wchar_t* mappingName, const wchar_t* readyName, const wchar_t*
         shared->slotSize != sizeof(Slot) ||
         shared->sampleCount != kSamples ||
         shared->reserved != 0)
+    {
+        std::fwprintf(stderr, L"Rejected ABI: version=%u header=%u slots=%u slotSize=%u samples=%u reserved=%u\\n",
+                      shared->version, shared->headerSize, shared->slotCount,
+                      shared->slotSize, shared->sampleCount, shared->reserved);
         return 13;
+    }
 
     UniqueHandle progress(OpenEventW(EVENT_MODIFY_STATE, FALSE, progressName));
     if (!progress) return 17;
@@ -313,9 +318,9 @@ bool produce(int malformedHeaderField, bool exitAfterReady, bool terminateAfterR
     ZeroMemory(shared, sizeof(*shared));
     shared->magic = kMagic;
     shared->version = malformedHeaderField == 1 ? 999u : 2u;
-    if (malformedHeaderField == 2) shared->slotSize++;
-    if (malformedHeaderField == 3) shared->sampleCount++;
-    if (malformedHeaderField == 4) shared->reserved = 1;
+    if (malformedHeaderField == 2) shared->slotSize = 0;
+    if (malformedHeaderField == 3) shared->sampleCount = 0;
+    if (malformedHeaderField == 4) shared->reserved = 0xFFFFFFFFu;
     shared->headerSize = static_cast<std::uint32_t>(offsetof(SharedRegion, slots));
     shared->slotCount = static_cast<std::uint32_t>(kCapacity);
     shared->slotSize = static_cast<std::uint32_t>(sizeof(Slot));
