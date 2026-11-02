@@ -463,9 +463,11 @@ int wmain(int argc, wchar_t** argv)
         std::wcscmp(argv[1], L"--terminate-during-transfer") == 0;
     const bool corruptFirstBlock = argc == 2 &&
         std::wcscmp(argv[1], L"--corrupt-first-block") == 0;
+    const bool restartAfterCrash = argc == 2 &&
+        std::wcscmp(argv[1], L"--restart-after-crash") == 0;
     if (argc > 2 || (argc == 2 &&
         !malformedHeader && !exitAfterReady && !terminateAfterReady &&
-        !terminateDuringTransfer && !corruptFirstBlock))
+        !terminateDuringTransfer && !corruptFirstBlock && !restartAfterCrash))
     {
         std::fwprintf(stderr, L"Usage: VoiceStudioSharedMemoryPocTest.exe [--malformed-header|--exit-after-ready|--terminate-after-ready|--terminate-during-transfer|--corrupt-first-block]\n");
         return 2;
