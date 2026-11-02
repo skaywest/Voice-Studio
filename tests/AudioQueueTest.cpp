@@ -21,6 +21,77 @@ namespace
         }
     }
 
+    void testAudioBlockDimensions()
+    {
+        using Block = voice_studio::AudioBlock<8, 2>;
+        Block block;
+        expect(!block.hasValidDimensions(), "zero-sized audio block metadata is rejected");
+
+        block.frames = 1;
+        block.channels = 1;
+        expect(block.hasValidDimensions(), "minimum audio block dimensions are accepted");
+
+        block.frames = 8;
+        block.channels = 2;
+        expect(block.hasValidDimensions(), "maximum audio block dimensions are accepted");
+
+        block.frames = 9;
+        expect(!block.hasValidDimensions(), "frame count above storage capacity is rejected");
+
+        block.frames = 8;
+        block.channels = 3;
+        expect(!block.hasValidDimensions(), "channel count above storage capacity is rejected");
+
+        block.frames = 0;
+        block.channels = 2;
+        expect(!block.hasValidDimensions(), "zero frame count is rejected");
+
+        block.frames = 8;
+        block.channels = 0;
+        expect(!block.hasValidDimensions(), "zero channel count is rejected");
+    }
+
+    void testRepeatedOverflowDoesNotOverwrite()
+    {
+        using Block = voice_studio::AudioBlock<4, 1>;
+        voice_studio::SpscQueue<Block, 2> queue;
+
+        Block first;
+        first.frames = 4;
+        first.channels = 1;
+        first.sequence = 100;
+        first.at(0, 0) = 1.0f;
+
+        Block second = first;
+        second.sequence = 101;
+        second.at(0, 0) = 2.0f;
+
+        Block rejected = first;
+        rejected.sequence = 999;
+        rejected.at(0, 0) = 9.0f;
+
+        expect(queue.tryPush(first) && queue.tryPush(second),
+               "producer fills the bounded queue before overflow stress");
+
+        bool allRejected = true;
+        for (int attempt = 0; attempt < 10000; ++attempt)
+            allRejected = queue.tryPush(rejected) == false && allRejected;
+
+        expect(allRejected, "full queue consistently rejects 10000 overflow attempts");
+
+        Block received;
+        const bool firstPopped = queue.tryPop(received);
+        expect(firstPopped && received.sequence == 100 && received.at(0, 0) == 1.0f,
+               "first unread block remains intact after repeated overflow");
+
+        const bool secondPopped = queue.tryPop(received);
+        expect(secondPopped && received.sequence == 101 && received.at(0, 0) == 2.0f,
+               "second unread block remains intact after repeated overflow");
+
+        expect(!queue.tryPop(received), "rejected overflow blocks never enter the queue");
+        expect(queue.tryPush(rejected), "queue resumes accepting blocks after capacity is freed");
+    }
+
     void testSingleThreadedBehavior()
     {
         using Block = voice_studio::AudioBlock<8, 2>;
@@ -124,6 +195,8 @@ int main()
            "64-bit atomics are always lock-free on supported x64 builds");
 #endif
 
+    testAudioBlockDimensions();
+    testRepeatedOverflowDoesNotOverwrite();
     testSingleThreadedBehavior();
     testConcurrentProducerConsumer();
 
