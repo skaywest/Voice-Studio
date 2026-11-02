@@ -61,6 +61,9 @@ jobs:
       - name: Build audio block ABI tests
         run: cmake --build build --config Release --target VoiceStudioAudioBlockAbiTest
 
+      - name: Build worker control ABI tests
+        run: cmake --build build --config Release --target VoiceStudioWorkerControlAbiTest
+
       - name: Build atomic audio block slot synchronization tests
         run: cmake --build build --config Release --target VoiceStudioAudioBlockSlotSyncTest
 
