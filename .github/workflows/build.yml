@@ -61,6 +61,9 @@ jobs:
       - name: Build audio block ABI tests
         run: cmake --build build --config Release --target VoiceStudioAudioBlockAbiTest
 
+      - name: Build atomic audio block slot synchronization tests
+        run: cmake --build build --config Release --target VoiceStudioAudioBlockSlotSyncTest
+
       - name: Build Windows shared-memory process test
         run: cmake --build build --config Release --target VoiceStudioSharedMemoryPocTest
 
