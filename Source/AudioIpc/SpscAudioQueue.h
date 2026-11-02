@@ -64,11 +64,20 @@ public:
         return true;
     }
 
+    // This is a diagnostic snapshot, not a synchronization primitive. The
+    // two atomic loads are not a single coherent snapshot: the consumer may
+    // advance readIndex after writeIndex was sampled, or the producer may
+    // advance writeIndex after readIndex was sampled. Clamp either transient
+    // inconsistency to the queue's valid occupancy range.
     std::size_t approximateSize() const noexcept
     {
         const auto write = writeIndex.load(std::memory_order_acquire);
         const auto read = readIndex.load(std::memory_order_acquire);
-        return static_cast<std::size_t>(write - read);
+        if (read > write)
+            return 0;
+
+        const auto distance = write - read;
+        return distance > Capacity ? Capacity : static_cast<std::size_t>(distance);
     }
 
 private:
