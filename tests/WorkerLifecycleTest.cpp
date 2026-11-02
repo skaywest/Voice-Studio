@@ -1,4 +1,5 @@
 #include "AudioIpc/WorkerLifecycle.h"
+#include "AudioIpc/WorkerCommandFactory.h"
 
 #include <cassert>
 #include <cstdint>
@@ -46,6 +47,16 @@ int main()
     assert(!lifecycle.isAudioConversionAvailable());
 
     assert(lifecycle.userEnableAi() == WorkerLifecycleAction::sendStart);
+    WorkerCommandMessage command{};
+    assert(makeWorkerCommand(WorkerLifecycleAction::sendStart, lifecycle, 5000, command));
+    assert(hasValidWorkerCommand(command));
+    assert(command.command == static_cast<std::uint16_t>(WorkerCommand::start));
+    assert(command.generation == lifecycle.currentGeneration());
+    assert(command.requestId == lifecycle.currentRequestId());
+    assert(command.timeoutMs == 5000);
+    assert(!makeWorkerCommand(WorkerLifecycleAction::launchWorker, lifecycle, 5000, command));
+    assert(!makeWorkerCommand(WorkerLifecycleAction::sendStart, lifecycle,
+                              kWorkerControlMaxTimeoutMs + 1, command));
     assert(lifecycle.currentState() == WorkerLifecycleState::enabling);
     assert(!lifecycle.isAudioConversionAvailable());
     assert(lifecycle.acceptStatus(statusFor(lifecycle, WorkerState::processing, 300)));
@@ -53,6 +64,9 @@ int main()
     assert(lifecycle.isAudioConversionAvailable());
 
     assert(lifecycle.userDisableAi(400) == WorkerLifecycleAction::sendStop);
+    assert(makeWorkerCommand(WorkerLifecycleAction::sendStop, lifecycle, 5000, command));
+    assert(command.command == static_cast<std::uint16_t>(WorkerCommand::stop));
+    assert(command.requestId == lifecycle.currentRequestId());
     assert(lifecycle.currentState() == WorkerLifecycleState::coolingDown);
     assert(!lifecycle.isAudioConversionAvailable());
     // A successful Stop acknowledgement must not cancel the 30-second
@@ -63,6 +77,9 @@ int main()
     assert(lifecycle.tick(400 + WorkerLifecycle::kCooldownNs - 1) == WorkerLifecycleAction::none);
     assert(lifecycle.tick(400 + WorkerLifecycle::kCooldownNs) == WorkerLifecycleAction::sendUnloadNow);
     assert(lifecycle.currentState() == WorkerLifecycleState::unloading);
+    assert(makeWorkerCommand(WorkerLifecycleAction::sendUnloadNow, lifecycle, 5000, command));
+    assert(command.command == static_cast<std::uint16_t>(WorkerCommand::unloadModel));
+    assert(command.requestId == lifecycle.currentRequestId());
     assert(lifecycle.acceptStatus(statusFor(lifecycle, WorkerState::stopped,
                                             400 + WorkerLifecycle::kCooldownNs + 1)));
     assert(lifecycle.currentState() == WorkerLifecycleState::ready);
