@@ -94,6 +94,9 @@ if(VOICE_STUDIO_BUILD_SMOKE_TESTS)
         add_test(NAME VoiceStudioSharedMemoryBadSlotSizeTest COMMAND VoiceStudioSharedMemoryPocTest --malformed-slot-size)
         add_test(NAME VoiceStudioSharedMemoryBadSampleCountTest COMMAND VoiceStudioSharedMemoryPocTest --malformed-sample-count)
         add_test(NAME VoiceStudioSharedMemoryBadReservedTest COMMAND VoiceStudioSharedMemoryPocTest --malformed-reserved)
+        add_test(NAME VoiceStudioSharedMemoryBadMagicTest COMMAND VoiceStudioSharedMemoryPocTest --malformed-magic)
+        add_test(NAME VoiceStudioSharedMemoryBadHeaderSizeTest COMMAND VoiceStudioSharedMemoryPocTest --malformed-header-size)
+        add_test(NAME VoiceStudioSharedMemoryBadSlotCountTest COMMAND VoiceStudioSharedMemoryPocTest --malformed-slot-count)
         add_test(NAME VoiceStudioSharedMemoryNaNSampleTest COMMAND VoiceStudioSharedMemoryPocTest --corrupt-nan)
         add_test(NAME VoiceStudioSharedMemoryInfinitySampleTest COMMAND VoiceStudioSharedMemoryPocTest --corrupt-infinity)
         add_test(NAME VoiceStudioSharedMemoryWorkerExitTest
@@ -112,6 +115,9 @@ if(VOICE_STUDIO_BUILD_SMOKE_TESTS)
             VoiceStudioSharedMemoryBadSlotSizeTest
             VoiceStudioSharedMemoryBadSampleCountTest
             VoiceStudioSharedMemoryBadReservedTest
+            VoiceStudioSharedMemoryBadMagicTest
+            VoiceStudioSharedMemoryBadHeaderSizeTest
+            VoiceStudioSharedMemoryBadSlotCountTest
             VoiceStudioSharedMemoryNaNSampleTest
             VoiceStudioSharedMemoryInfinitySampleTest
             VoiceStudioSharedMemoryWorkerExitTest
