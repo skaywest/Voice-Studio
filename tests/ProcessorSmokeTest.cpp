@@ -75,7 +75,7 @@ int main()
     setParameter(processor, "compressor", 0.0f);
     setParameter(processor, "outputGain", 6.0f);
     setParameter(processor, "dspEnabled", 1.0f);
-    juce::AudioBuffer<float> gainBuffer(2, 64);
+    juce::AudioBuffer<float> gainBuffer(2, 2048);
     gainBuffer.clear();
     for (int channel = 0; channel < gainBuffer.getNumChannels(); ++channel)
         for (int sample = 0; sample < gainBuffer.getNumSamples(); ++sample)
@@ -86,7 +86,7 @@ int main()
     for (int channel = 0; channel < gainBuffer.getNumChannels(); ++channel)
         for (int sample = 0; sample < gainBuffer.getNumSamples(); ++sample)
             gainCorrect = gainCorrect && std::abs(gainBuffer.getSample(channel, sample) - 0.1f * expectedGain) < 0.0001f;
-    expect(gainCorrect, "output gain applies the requested +6 dB when other stages are disabled");
+    expect(gainCorrect, "smoothed output gain reaches the requested +6 dB without a discontinuous step");
 
     juce::AudioProcessor::BusesLayout monoLayout;
     monoLayout.inputBuses.add(juce::AudioChannelSet::mono());
