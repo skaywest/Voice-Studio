@@ -7,6 +7,7 @@
  #define NOMINMAX
 #endif
 #include <windows.h>
+#include <sddl.h>
 
 #include "WorkerControlAbi.h"
 
@@ -15,7 +16,7 @@
 
 namespace voice_studio::ipc
 {
-// Synchronous message-mode Named Pipe endpoint. Every method is control-thread
+// Message-mode Named Pipe endpoint. Every method is control-thread
 // only: never call from an audio callback. The caller supplies an unpredictable
 // per-session pipe name and starts the Worker with that name out-of-band.
 class WindowsWorkerControlPipe final
@@ -31,6 +32,17 @@ public:
         if (pipe != INVALID_HANDLE_VALUE || pipeName.empty())
             return false;
 
+        // Restrict the pipe DACL to its owner. The pipe object's owner is the
+        // creating process user; unrelated local users/processes cannot open it.
+        PSECURITY_DESCRIPTOR securityDescriptor = nullptr;
+        if (!ConvertStringSecurityDescriptorToSecurityDescriptorW(
+                L"D:P(A;;GA;;;OW)", SDDL_REVISION_1, &securityDescriptor, nullptr))
+            return false;
+        SECURITY_ATTRIBUTES securityAttributes{};
+        securityAttributes.nLength = sizeof(securityAttributes);
+        securityAttributes.lpSecurityDescriptor = securityDescriptor;
+        securityAttributes.bInheritHandle = FALSE;
+
         HANDLE handle = CreateNamedPipeW(
             pipeName.c_str(),
             PIPE_ACCESS_DUPLEX,
@@ -40,7 +52,8 @@ public:
             static_cast<DWORD>(sizeof(WorkerStatusMessage)),
             static_cast<DWORD>(sizeof(WorkerCommandMessage)),
             0,
-            nullptr);
+            &securityAttributes);
+        LocalFree(securityDescriptor);
         if (handle == INVALID_HANDLE_VALUE)
             return false;
         pipe = handle;
