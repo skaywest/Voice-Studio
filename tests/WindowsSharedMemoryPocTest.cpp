@@ -6,6 +6,7 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <cmath>
 #include <cstdio>
 #include <cwchar>
 #include <limits>
@@ -280,8 +281,8 @@ std::wstring quote(const std::wstring& value)
     return L"\"" + value + L"\"";
 }
 
-bool produce(bool malformedHeader, bool exitAfterReady, bool terminateAfterReady,
-             bool terminateDuringTransfer, bool corruptFirstBlock)
+bool produce(int malformedHeaderField, bool exitAfterReady, bool terminateAfterReady,
+             bool terminateDuringTransfer, int corruptSample)
 {
     Security security;
     if (!security.initialize())
@@ -311,7 +312,10 @@ bool produce(bool malformedHeader, bool exitAfterReady, bool terminateAfterReady
 
     ZeroMemory(shared, sizeof(*shared));
     shared->magic = kMagic;
-    shared->version = malformedHeader ? 999u : 2u;
+    shared->version = malformedHeaderField == 1 ? 999u : 2u;
+    if (malformedHeaderField == 2) shared->slotSize++;
+    if (malformedHeaderField == 3) shared->sampleCount++;
+    if (malformedHeaderField == 4) shared->reserved = 1;
     shared->headerSize = static_cast<std::uint32_t>(offsetof(SharedRegion, slots));
     shared->slotCount = static_cast<std::uint32_t>(kCapacity);
     shared->slotSize = static_cast<std::uint32_t>(sizeof(Slot));
@@ -361,7 +365,7 @@ bool produce(bool malformedHeader, bool exitAfterReady, bool terminateAfterReady
 
     const ULONGLONG transferDeadline = GetTickCount64() + kTimeoutMs;
     std::uint64_t position = 0;
-    while (ok && !malformedHeader && !exitAfterReady && !terminateAfterReady &&
+    while (ok && malformedHeaderField == 0 && !exitAfterReady && !terminateAfterReady &&
            position < kBlockCount)
     {
         if (GetTickCount64() >= transferDeadline ||
@@ -383,12 +387,16 @@ bool produce(bool malformedHeader, bool exitAfterReady, bool terminateAfterReady
         slot.block = position;
         for (std::size_t i = 0; i < kSamples; ++i)
             slot.samples[i] = static_cast<float>(expectedSample(position, i));
-        if (corruptFirstBlock && position == 0)
-            slot.samples[7] += 1.0f;
+        if (corruptSample != 0 && position == 0)
+        {
+            if (corruptSample == 1) slot.samples[7] += 1.0f;
+            else if (corruptSample == 2) slot.samples[7] = (std::numeric_limits<float>::quiet_NaN)();
+            else if (corruptSample == 3) slot.samples[7] = (std::numeric_limits<float>::infinity)();
+        }
 
         InterlockedExchange64(&slot.sequence, static_cast<LONG64>(position + 1));
         ++position;
-        if (corruptFirstBlock && position == 1)
+        if (corruptSample != 0 && position == 1)
             break;
         if (terminateDuringTransfer && position == 1)
         {
@@ -417,11 +425,11 @@ bool produce(bool malformedHeader, bool exitAfterReady, bool terminateAfterReady
     {
         DWORD exitCode = 1;
         const BOOL gotExitCode = GetExitCodeProcess(childProcess.get(), &exitCode);
-        const DWORD expectedExit = malformedHeader ? 13u :
+        const DWORD expectedExit = malformedHeaderField != 0 ? 13u :
                                    (exitAfterReady ? 20u :
                                     (terminateAfterReady ? 77u :
                                      (terminateDuringTransfer ? 78u :
-                                      (corruptFirstBlock ? 15u : 0u))));
+                                      (corruptSample != 0 ? 15u : 0u))));
         if (!gotExitCode || exitCode != expectedExit)
         {
             std::fwprintf(stderr, L"Consumer exit mismatch: got=%u, exitCode=%lu, expected=%lu, blocksSent=%llu\\n",
@@ -430,14 +438,14 @@ bool produce(bool malformedHeader, bool exitAfterReady, bool terminateAfterReady
                           static_cast<unsigned long long>(position));
             ok = false;
         }
-        else if (malformedHeader || exitAfterReady || terminateAfterReady ||
-                 terminateDuringTransfer || corruptFirstBlock)
+        else if (malformedHeaderField != 0 || exitAfterReady || terminateAfterReady ||
+                 terminateDuringTransfer || corruptSample != 0)
         {
             ok = true;
         }
     }
 
-    if (ok && malformedHeader)
+    if (ok && malformedHeaderField != 0)
         std::wprintf(L"PASS: malformed shared-memory header rejected with exit code 13\\n");
     else if (ok && exitAfterReady)
         std::wprintf(L"PASS: worker cleanly exited after handshake with exit code 20\\n");
@@ -469,6 +477,11 @@ int wmain(int argc, wchar_t** argv)
 
     const bool malformedHeader = argc == 2 &&
         std::wcscmp(argv[1], L"--malformed-header") == 0;
+    const bool malformedSlotSize = argc == 2 && std::wcscmp(argv[1], L"--malformed-slot-size") == 0;
+    const bool malformedSampleCount = argc == 2 && std::wcscmp(argv[1], L"--malformed-sample-count") == 0;
+    const bool malformedReserved = argc == 2 && std::wcscmp(argv[1], L"--malformed-reserved") == 0;
+    const bool corruptNan = argc == 2 && std::wcscmp(argv[1], L"--corrupt-nan") == 0;
+    const bool corruptInfinity = argc == 2 && std::wcscmp(argv[1], L"--corrupt-infinity") == 0;
     const bool exitAfterReady = argc == 2 &&
         std::wcscmp(argv[1], L"--exit-after-ready") == 0;
     const bool terminateAfterReady = argc == 2 &&
@@ -480,7 +493,7 @@ int wmain(int argc, wchar_t** argv)
     const bool restartAfterCrash = argc == 2 &&
         std::wcscmp(argv[1], L"--restart-after-crash") == 0;
     if (argc > 2 || (argc == 2 &&
-        !malformedHeader && !exitAfterReady && !terminateAfterReady &&
+        !malformedHeader && !malformedSlotSize && !malformedSampleCount && !malformedReserved && !corruptNan && !corruptInfinity && !exitAfterReady && !terminateAfterReady &&
         !terminateDuringTransfer && !corruptFirstBlock && !restartAfterCrash))
     {
         std::fwprintf(stderr, L"Usage: VoiceStudioSharedMemoryPocTest.exe [--malformed-header|--exit-after-ready|--terminate-after-ready|--terminate-during-transfer|--corrupt-first-block|--restart-after-crash]\n");
@@ -489,13 +502,14 @@ int wmain(int argc, wchar_t** argv)
     if (restartAfterCrash)
     {
         // produce() closes the first session resources before returning.
-        if (!produce(false, false, true, false, false))
+        if (!produce(0, false, true, false, 0))
             return 1;
-        if (!produce(false, false, false, false, false))
+        if (!produce(0, false, false, false, 0))
             return 1;
         std::wprintf(L"PASS: fresh shared-memory session started after worker crash\\n");
         return 0;
     }
-    return produce(malformedHeader, exitAfterReady, terminateAfterReady,
-                   terminateDuringTransfer, corruptFirstBlock) ? 0 : 1;
+    const int malformedField = malformedHeader ? 1 : (malformedSlotSize ? 2 : (malformedSampleCount ? 3 : (malformedReserved ? 4 : 0)));
+    const int corruptMode = corruptFirstBlock ? 1 : (corruptNan ? 2 : (corruptInfinity ? 3 : 0));
+    return produce(malformedField, exitAfterReady, terminateAfterReady, terminateDuringTransfer, corruptMode) ? 0 : 1;
 }
