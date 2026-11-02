@@ -83,23 +83,25 @@ void VoiceStudioAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, j
         parameters.getRawParameterValue("outputGain")->load());
     outputGainSmoother.setTargetValue(targetGain);
 
-    for (int ch = 0; ch < channels; ++ch)
+    // Advance the gain smoother once per frame, not once per channel.
+    // This keeps the ramp duration sample-accurate and stereo channels linked.
+    for (int i = 0; i < buffer.getNumSamples(); ++i)
     {
-        auto* data = buffer.getWritePointer(ch);
-        auto& hp = highPassFilters[static_cast<size_t>(ch)];
-        auto& eq = presenceFilters[static_cast<size_t>(ch)];
-        auto& comp = compressors[static_cast<size_t>(ch)];
-
-        for (int i = 0; i < buffer.getNumSamples(); ++i)
+        const float gain = outputGainSmoother.getNextValue();
+        for (int ch = 0; ch < channels; ++ch)
         {
-            float sample = data[i];
+            float sample = buffer.getSample(ch, i);
+            auto& hp = highPassFilters[static_cast<size_t>(ch)];
+            auto& eq = presenceFilters[static_cast<size_t>(ch)];
+            auto& comp = compressors[static_cast<size_t>(ch)];
+
             if (useHighPass)
                 sample = hp.processSample(sample);
             if (usePresence)
                 sample = eq.processSample(sample);
             if (useCompressor)
                 sample = comp.processSample(0, sample);
-            data[i] = sample * outputGainSmoother.getNextValue();
+            buffer.setSample(ch, i, sample * gain);
         }
     }
 }
