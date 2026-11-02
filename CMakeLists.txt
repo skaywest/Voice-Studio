@@ -91,6 +91,11 @@ if(VOICE_STUDIO_BUILD_SMOKE_TESTS)
         set_tests_properties(VoiceStudioSharedMemoryPocTest PROPERTIES TIMEOUT 90)
         add_test(NAME VoiceStudioSharedMemoryMalformedHeaderTest
                  COMMAND VoiceStudioSharedMemoryPocTest --malformed-header)
+        add_test(NAME VoiceStudioSharedMemoryBadSlotSizeTest COMMAND VoiceStudioSharedMemoryPocTest --malformed-slot-size)
+        add_test(NAME VoiceStudioSharedMemoryBadSampleCountTest COMMAND VoiceStudioSharedMemoryPocTest --malformed-sample-count)
+        add_test(NAME VoiceStudioSharedMemoryBadReservedTest COMMAND VoiceStudioSharedMemoryPocTest --malformed-reserved)
+        add_test(NAME VoiceStudioSharedMemoryNaNSampleTest COMMAND VoiceStudioSharedMemoryPocTest --corrupt-nan)
+        add_test(NAME VoiceStudioSharedMemoryInfinitySampleTest COMMAND VoiceStudioSharedMemoryPocTest --corrupt-infinity)
         add_test(NAME VoiceStudioSharedMemoryWorkerExitTest
                  COMMAND VoiceStudioSharedMemoryPocTest --exit-after-ready)
         add_test(NAME VoiceStudioSharedMemoryWorkerCrashTest
@@ -104,6 +109,11 @@ if(VOICE_STUDIO_BUILD_SMOKE_TESTS)
         set_tests_properties(
             VoiceStudioSharedMemoryPocTest
             VoiceStudioSharedMemoryMalformedHeaderTest
+            VoiceStudioSharedMemoryBadSlotSizeTest
+            VoiceStudioSharedMemoryBadSampleCountTest
+            VoiceStudioSharedMemoryBadReservedTest
+            VoiceStudioSharedMemoryNaNSampleTest
+            VoiceStudioSharedMemoryInfinitySampleTest
             VoiceStudioSharedMemoryWorkerExitTest
             VoiceStudioSharedMemoryWorkerCrashTest
             VoiceStudioSharedMemoryWorkerCrashDuringTransferTest
