@@ -8,6 +8,7 @@
 #endif
 #include <windows.h>
 
+#include "WindowsAudioBlockMapping.h"
 #include "WindowsWorkerControlPipe.h"
 #include "WindowsWorkerProcess.h"
 #include "WorkerControlCoordinator.h"
@@ -46,10 +47,18 @@ public:
             return false;
         }
 
-        // The Worker receives only its private pipe endpoint and the session
-        // identity. It must echo both values in its initial READY status.
+        const std::wstring audioMappingName = pipeName + L"_audio";
+        if (!audioMapping.createServer(audioMappingName))
+        {
+            pipe.close();
+            coordinator.workerExited();
+            return false;
+        }
+
+        // The Worker validates the fixed audio ABI before it announces READY.
         const std::wstring args = L"--voice-studio-worker \"" + pipeName +
-            L"\" " + std::to_wstring(coordinator.currentGeneration()) +
+            L"\" \"" + audioMappingName + L"\" " +
+            std::to_wstring(coordinator.currentGeneration()) +
             L" " + std::to_wstring(coordinator.currentRequestId());
         if (!process.launch(executablePath, args))
         {
@@ -151,6 +160,7 @@ public:
         {
             coordinator.workerExited();
             pipe.close();
+            audioMapping.close();
             process.shutdown();
             active = false;
         }
@@ -181,6 +191,7 @@ private:
     {
         coordinator.workerExited();
         pipe.close();
+        audioMapping.close();
         if (process.nativeProcessHandle() != nullptr)
         {
             if (!process.hasExited() && !process.terminate())
@@ -195,6 +206,7 @@ private:
     {
         coordinator.workerExited();
         pipe.close();
+        audioMapping.close();
         if (process.hasExited())
             process.closeAfterExit();
         active = false;
@@ -202,6 +214,7 @@ private:
 
     WorkerControlCoordinator coordinator;
     WindowsWorkerControlPipe pipe;
+    WindowsAudioBlockMapping audioMapping;
     WindowsWorkerProcess process;
     bool active = false;
 };
