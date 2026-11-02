@@ -48,6 +48,11 @@ public:
         return apply(lifecycle.tick(nowNs), timeoutMs);
     }
 
+    WorkerControlDecision unloadNow(std::uint32_t timeoutMs = 30000) noexcept
+    {
+        return apply(lifecycle.unloadNow(), timeoutMs);
+    }
+
     bool acceptStatus(const WorkerStatusMessage& status) noexcept
     {
         const bool accepted = lifecycle.acceptStatus(status);
