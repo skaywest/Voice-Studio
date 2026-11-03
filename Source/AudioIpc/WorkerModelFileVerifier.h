@@ -74,7 +74,7 @@ inline bool isContainedFinalPath(const std::wstring& root,
     // A root ending in a separator already establishes the component boundary
     // (for example, a volume root such as \\\\?\\C:\\). Otherwise the next
     // candidate character must be a separator, not a sibling-name prefix.
-    return root.back() == L'\\\\' || candidate[root.size()] == L'\\\\';
+    return root.back() == L'\\' || candidate[root.size()] == L'\\';
 }
 
 inline bool openVerifiedFile(const char16_t* path, std::uint16_t pathLength,
