@@ -105,6 +105,12 @@ if(VOICE_STUDIO_BUILD_SMOKE_TESTS)
     target_compile_features(VoiceStudioWorkerControlAbiTest PRIVATE cxx_std_17)
     add_test(NAME VoiceStudioWorkerControlAbiTest COMMAND VoiceStudioWorkerControlAbiTest)
 
+    # Fixed-size model-selection handoff ABI; validation only (no file loading).
+    add_executable(VoiceStudioWorkerModelConfigAbiTest tests/WorkerModelConfigAbiTest.cpp)
+    target_include_directories(VoiceStudioWorkerModelConfigAbiTest PRIVATE Source)
+    target_compile_features(VoiceStudioWorkerModelConfigAbiTest PRIVATE cxx_std_17)
+    add_test(NAME VoiceStudioWorkerModelConfigAbiTest COMMAND VoiceStudioWorkerModelConfigAbiTest)
+
     # Stable, versioned local command contract for future FIFINE D6 / hotkey integrations.
     add_executable(VoiceStudioVoiceControlAbiTest tests/VoiceControlCommandAbiTest.cpp)
     target_include_directories(VoiceStudioVoiceControlAbiTest PRIVATE Source)
