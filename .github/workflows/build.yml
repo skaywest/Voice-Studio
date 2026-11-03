@@ -38,6 +38,10 @@ jobs:
           python -m unittest -v
           python probe.py --json
 
+      - name: Test RVC inference preflight harness
+        working-directory: tools/rvc_inference_spike
+        run: python -m unittest -v
+
       - name: Setup MSVC
         uses: ilammy/msvc-dev-cmd@v1
         with:

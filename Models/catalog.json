@@ -1,5 +1,0 @@
-{
-  "catalog_version": 1,
-  "description": "Local Voice Studio model catalog. Empty by default; models are added only after source, license, integrity, and compatibility review.",
-  "models": []
-}
