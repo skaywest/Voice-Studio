@@ -3,6 +3,7 @@
 
 #include <chrono>
 #include <limits>
+#include <utility>
 
 #if defined(_WIN32)
  #ifndef WIN32_LEAN_AND_MEAN
@@ -33,11 +34,33 @@ VoiceStudioAudioProcessor::VoiceStudioAudioProcessor()
           .withOutput("Output", juce::AudioChannelSet::stereo(), true)),
       parameters(*this, nullptr, "PARAMETERS", createParameterLayout())
 {
+#if defined(_WIN32)
+    try
+    {
+        workerControlThread = std::thread(&VoiceStudioAudioProcessor::workerControlLoop, this);
+        workerThreadReady.store(true, std::memory_order_release);
+    }
+    catch (...)
+    {
+        workerThreadReady.store(false, std::memory_order_release);
+    }
+#endif
 }
 
 VoiceStudioAudioProcessor::~VoiceStudioAudioProcessor()
 {
+#if defined(_WIN32)
     stopWorker();
+    {
+        std::lock_guard<std::mutex> lock(workerCommandMutex);
+        workerThreadExitRequested = true;
+    }
+    workerCommandWake.notify_one();
+    if (workerControlThread.joinable())
+        workerControlThread.join();
+#else
+    stopWorker();
+#endif
 }
 
 VoiceStudioAudioProcessor::APVTS::ParameterLayout VoiceStudioAudioProcessor::createParameterLayout()
@@ -179,15 +202,27 @@ void VoiceStudioAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, j
 bool VoiceStudioAudioProcessor::launchWorker(const juce::File& executable)
 {
 #if defined(_WIN32)
-    if (!executable.existsAsFile() || !executable.getFileName().equalsIgnoreCase("VoiceStudioWorker.exe"))
+    if (!workerThreadReady.load(std::memory_order_acquire) ||
+        !executable.existsAsFile() ||
+        !executable.getFileName().equalsIgnoreCase("VoiceStudioWorker.exe"))
         return false;
-    static std::atomic<std::uint64_t> nextPipeId { 1 };
-    const auto pipeId = nextPipeId.fetch_add(1, std::memory_order_relaxed);
-    const std::wstring pipeName = L"\\\\.\\pipe\\VoiceStudio-" +
-        std::to_wstring(GetCurrentProcessId()) + L"-" + std::to_wstring(pipeId);
+
+    {
+        std::lock_guard<std::mutex> lock(workerCommandMutex);
+        if (workerUiRunning.load(std::memory_order_acquire) ||
+            workerLaunchPending || workerStopRequested || workerThreadExitRequested)
+            return false;
+
+        pendingWorkerExecutable = executable.getFullPathName().toWideCharPointer();
+        workerLaunchPending = true;
+        workerUiRunning.store(true, std::memory_order_release);
+        workerUiState.store(static_cast<int>(voice_studio::ipc::WorkerLifecycleState::starting),
+                            std::memory_order_release);
+    }
+
     setAiConversionAvailable(false);
-    return workerController.launch(executable.getFullPathName().toWideCharPointer(),
-                                   pipeName, monotonicNowNs(), 5000);
+    workerCommandWake.notify_one();
+    return true;
 #else
     juce::ignoreUnused(executable);
     return false;
@@ -198,31 +233,133 @@ void VoiceStudioAudioProcessor::stopWorker() noexcept
 {
     setAiConversionAvailable(false);
 #if defined(_WIN32)
-    workerController.shutdown();
+    {
+        std::lock_guard<std::mutex> lock(workerCommandMutex);
+        if (workerLaunchPending)
+        {
+            workerLaunchPending = false;
+            pendingWorkerExecutable.clear();
+            workerUiRunning.store(false, std::memory_order_release);
+            workerUiState.store(static_cast<int>(voice_studio::ipc::WorkerLifecycleState::disabled),
+                                std::memory_order_release);
+        }
+        else if (workerUiRunning.load(std::memory_order_acquire))
+        {
+            workerStopRequested = true;
+            workerUiState.store(static_cast<int>(voice_studio::ipc::WorkerLifecycleState::stopping),
+                                std::memory_order_release);
+        }
+    }
+    workerCommandWake.notify_one();
 #endif
 }
 
-void VoiceStudioAudioProcessor::serviceWorker() noexcept
+void VoiceStudioAudioProcessor::publishWorkerSnapshot() noexcept
 {
 #if defined(_WIN32)
     const auto state = workerController.currentState();
-    if (state != voice_studio::ipc::WorkerLifecycleState::disabled &&
-        state != voice_studio::ipc::WorkerLifecycleState::faulted)
+    workerUiState.store(static_cast<int>(state), std::memory_order_release);
+    const bool running = state != voice_studio::ipc::WorkerLifecycleState::disabled &&
+                         state != voice_studio::ipc::WorkerLifecycleState::faulted;
+    workerUiRunning.store(running, std::memory_order_release);
+#endif
+}
+
+void VoiceStudioAudioProcessor::workerControlLoop() noexcept
+{
+#if defined(_WIN32)
+    for (;;)
     {
-        workerController.pollStatus(1);
-        workerController.tick(monotonicNowNs(), 1000);
+        std::wstring executablePath;
+        {
+            std::unique_lock<std::mutex> lock(workerCommandMutex);
+            workerCommandWake.wait(lock, [this]
+            {
+                return workerLaunchPending || workerStopRequested || workerThreadExitRequested;
+            });
+
+            if (workerThreadExitRequested)
+                break;
+
+            if (workerStopRequested && !workerLaunchPending)
+            {
+                workerStopRequested = false;
+                lock.unlock();
+                workerController.shutdown();
+                workerUiRunning.store(false, std::memory_order_release);
+                workerUiState.store(static_cast<int>(voice_studio::ipc::WorkerLifecycleState::disabled),
+                                    std::memory_order_release);
+                continue;
+            }
+
+            if (!workerLaunchPending)
+                continue;
+
+            executablePath = std::move(pendingWorkerExecutable);
+            pendingWorkerExecutable.clear();
+            workerLaunchPending = false;
+        }
+
+        static std::atomic<std::uint64_t> nextPipeId { 1 };
+        const auto pipeId = nextPipeId.fetch_add(1, std::memory_order_relaxed);
+        const std::wstring pipeName = L"\\\\.\\pipe\\VoiceStudio-" +
+            std::to_wstring(GetCurrentProcessId()) + L"-" + std::to_wstring(pipeId);
+
+        const bool launched = workerController.launch(executablePath, pipeName, monotonicNowNs(), 5000);
+        publishWorkerSnapshot();
+
+        if (launched)
+        {
+            for (;;)
+            {
+                {
+                    std::lock_guard<std::mutex> lock(workerCommandMutex);
+                    if (workerStopRequested || workerThreadExitRequested)
+                        break;
+                }
+
+                workerController.pollStatus(50);
+                workerController.tick(monotonicNowNs(), 1000);
+                publishWorkerSnapshot();
+
+                const auto state = workerController.currentState();
+                if (state == voice_studio::ipc::WorkerLifecycleState::disabled ||
+                    state == voice_studio::ipc::WorkerLifecycleState::faulted)
+                    break;
+            }
+        }
+
+        bool shouldExit = false;
+        bool requestedStop = false;
+        {
+            std::lock_guard<std::mutex> lock(workerCommandMutex);
+            requestedStop = workerStopRequested;
+            workerStopRequested = false;
+            shouldExit = workerThreadExitRequested;
+        }
+
+        workerController.shutdown();
+        workerUiRunning.store(false, std::memory_order_release);
+        const auto finalState = requestedStop || shouldExit || launched
+            ? voice_studio::ipc::WorkerLifecycleState::disabled
+            : voice_studio::ipc::WorkerLifecycleState::faulted;
+        workerUiState.store(static_cast<int>(finalState), std::memory_order_release);
+
+        if (shouldExit)
+            break;
     }
-    const bool available = workerController.audioConversionAvailable();
-    setAiConversionAvailable(available, available ? workerController.generation() : 0);
+
+    workerController.shutdown();
+    workerUiRunning.store(false, std::memory_order_release);
+    workerUiState.store(static_cast<int>(voice_studio::ipc::WorkerLifecycleState::disabled),
+                        std::memory_order_release);
 #endif
 }
 
 bool VoiceStudioAudioProcessor::workerIsRunning() const noexcept
 {
 #if defined(_WIN32)
-    const auto state = workerController.currentState();
-    return state != voice_studio::ipc::WorkerLifecycleState::disabled &&
-           state != voice_studio::ipc::WorkerLifecycleState::faulted;
+    return workerUiRunning.load(std::memory_order_acquire);
 #else
     return false;
 #endif
@@ -232,7 +369,7 @@ juce::String VoiceStudioAudioProcessor::workerStatusText() const
 {
 #if defined(_WIN32)
     using State = voice_studio::ipc::WorkerLifecycleState;
-    switch (workerController.currentState())
+    switch (static_cast<State>(workerUiState.load(std::memory_order_acquire)))
     {
         case State::disabled: return "WORKER STOPPED";
         case State::starting: return "WORKER STARTING...";

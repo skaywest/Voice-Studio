@@ -9,6 +9,12 @@
 #include <array>
 #include <atomic>
 #include <cstdint>
+#if defined(_WIN32)
+ #include <condition_variable>
+ #include <mutex>
+ #include <string>
+ #include <thread>
+#endif
 
 class VoiceStudioAudioProcessor final : public juce::AudioProcessor
 {
@@ -43,7 +49,6 @@ public:
     bool isAiConversionAvailable() const noexcept { return aiConversionAvailable.load(std::memory_order_acquire); }
     bool launchWorker(const juce::File& executable);
     void stopWorker() noexcept;
-    void serviceWorker() noexcept;
     bool workerIsRunning() const noexcept;
     juce::String workerStatusText() const;
 
@@ -56,6 +61,20 @@ private:
     voice_studio::ipc::AudioBlockRealtimeAccess realtimeAccess;
 #if defined(_WIN32)
     voice_studio::ipc::WindowsWorkerController workerController { realtimeAccess };
+#endif
+#if defined(_WIN32)
+    void workerControlLoop() noexcept;
+    void publishWorkerSnapshot() noexcept;
+    std::mutex workerCommandMutex;
+    std::condition_variable workerCommandWake;
+    std::wstring pendingWorkerExecutable;
+    bool workerLaunchPending = false;
+    bool workerStopRequested = false;
+    bool workerThreadExitRequested = false;
+    std::thread workerControlThread;
+    std::atomic<bool> workerThreadReady { false };
+    std::atomic<bool> workerUiRunning { false };
+    std::atomic<int> workerUiState { static_cast<int>(voice_studio::ipc::WorkerLifecycleState::disabled) };
 #endif
     voice_studio::ipc::AudioBlockRealtimeBridge realtimeBridge;
     std::atomic<bool> aiConversionAvailable { false };

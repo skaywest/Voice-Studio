@@ -135,7 +135,6 @@ void VoiceStudioAudioProcessorEditor::resized()
 
 void VoiceStudioAudioProcessorEditor::timerCallback()
 {
-    processor.serviceWorker();
     workerStatusLabel.setText(processor.workerStatusText(), juce::dontSendNotification);
     const bool running = processor.workerIsRunning();
     startWorkerButton.setEnabled(!running && workerFileChooser == nullptr);
