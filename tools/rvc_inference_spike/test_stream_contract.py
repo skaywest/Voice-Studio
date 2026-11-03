@@ -31,6 +31,14 @@ class FakeEngine:
 
 
 class StreamContractTests(unittest.TestCase):
+    @staticmethod
+    def make_rvc_root(parent):
+        root = Path(parent) / "rvc"
+        worker = root / "RVCRealtimeVST" / "worker" / "rvc_worker.py"
+        worker.parent.mkdir(parents=True)
+        worker.write_text("# externally supplied RVC worker fixture\\n", encoding="utf-8")
+        return root
+
     def test_upstream_rounding_matches_native_60ms_mono_48khz_block(self):
         self.assertEqual(expected_rvc_block_frames(48_000, 60.0), 2_880)
         self.assertEqual(expected_rvc_block_frames(48_000, 40.0), 1_920)
@@ -43,8 +51,7 @@ class StreamContractTests(unittest.TestCase):
 
     def test_engine_config_explicitly_targets_native_block_geometry(self):
         with tempfile.TemporaryDirectory() as temp:
-            root = Path(temp) / "rvc"
-            root.mkdir()
+            root = self.make_rvc_root(temp)
             model = Path(temp) / "voice.pth"
             model.write_bytes(b"fixture")
             config = build_engine_config(root, model)
@@ -60,8 +67,7 @@ class StreamContractTests(unittest.TestCase):
 
     def test_config_rejects_missing_or_wrong_model(self):
         with tempfile.TemporaryDirectory() as temp:
-            root = Path(temp) / "rvc"
-            root.mkdir()
+            root = self.make_rvc_root(temp)
             with self.assertRaises(ValueError):
                 build_engine_config(root, Path(temp) / "missing.pth")
             wrong = Path(temp) / "voice.bin"

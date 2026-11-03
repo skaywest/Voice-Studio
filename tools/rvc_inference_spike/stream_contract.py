@@ -52,10 +52,13 @@ def build_engine_config(
     """Create explicit RVC config matching the existing mono 48 kHz IPC ABI."""
     root = Path(rvc_root).expanduser().resolve()
     model = Path(model_path).expanduser().resolve()
-    if not root.is_dir():
-        raise ValueError("rvc_root must be an existing directory")
+    worker_source = root / "RVCRealtimeVST" / "worker" / "rvc_worker.py"
+    if not root.is_dir() or not worker_source.is_file():
+        raise ValueError("rvc_root must be an RVC checkout containing RVCRealtimeVST/worker/rvc_worker.py")
     if not model.is_file() or model.suffix.lower() != ".pth":
         raise ValueError("model_path must be an existing .pth file")
+    if model.stat().st_size == 0:
+        raise ValueError("model_path must not be empty")
 
     config: dict[str, Any] = {
         "rvc_root": str(root),
@@ -70,6 +73,8 @@ def build_engine_config(
         index = Path(index_path).expanduser().resolve()
         if not index.is_file() or index.suffix.lower() != ".index":
             raise ValueError("index_path must be an existing .index file")
+        if index.stat().st_size == 0:
+            raise ValueError("index_path must not be empty")
         config["index_path"] = str(index)
 
     frames = expected_rvc_block_frames(config["sample_rate"], config["block_ms"])
