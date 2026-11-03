@@ -10,10 +10,9 @@ import sys
 from typing import Any
 
 
-def _version_major_minor(value: Any) -> str:
-    text = str(value or "").split("+", 1)[0]
-    parts = text.split(".")
-    return ".".join(parts[:2]) if len(parts) >= 2 else text
+def _release_version(value: Any) -> str:
+    """Compare complete package release versions while ignoring local CUDA tags."""
+    return str(value or "").split("+", 1)[0].strip()
 
 
 def _import_torchaudio() -> Any | None:
@@ -54,12 +53,14 @@ def _torch_report(torch_module: Any | None = None,
     else:
         audio_version = str(getattr(torchaudio_module, "__version__", "unknown"))
         torch_version = report["version"]
+        torch_release = _release_version(torch_version)
+        audio_release = _release_version(audio_version)
         report["torchaudio"] = {
             "installed": True,
             "version": audio_version,
             "version_matches_torch": (
-                _version_major_minor(audio_version) == _version_major_minor(torch_version)
-                and _version_major_minor(audio_version) not in ("", "unknown")
+                audio_release == torch_release
+                and audio_release not in ("", "unknown")
             ),
         }
 

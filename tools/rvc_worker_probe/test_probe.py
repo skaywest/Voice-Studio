@@ -101,6 +101,16 @@ class ProbeTests(unittest.TestCase):
         report = collect_report(FakeTorch, mismatch)
         self.assertFalse(report["checks"]["torchaudio_matches_torch"])
 
+    def test_torchaudio_patch_version_mismatch_is_rejected(self):
+        mismatch = type("Mismatch", (), {"__version__": "2.7.2+cu128"})
+        report = collect_report(FakeTorch, mismatch)
+        self.assertFalse(report["checks"]["torchaudio_matches_torch"])
+
+    def test_matching_release_with_cuda_build_tags_is_accepted(self):
+        matching = type("Matching", (), {"__version__": "2.7.1+cu126"})
+        report = collect_report(FakeTorch, matching)
+        self.assertTrue(report["checks"]["torchaudio_matches_torch"])
+
     def test_missing_torchaudio_is_reported(self):
         with patch("probe._import_torchaudio", return_value=None):
             report = collect_report(FakeTorch, None)

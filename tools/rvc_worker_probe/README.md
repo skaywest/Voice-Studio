@@ -9,6 +9,8 @@ perform voice conversion or load an RVC model.
 - A pinned PyTorch + Torchaudio pair built for CUDA 12.8 (cu128).
 - PyTorch 2.7.1 / Torchaudio 2.7.1 is a documented candidate, not yet a
   validated final dependency choice for the RTX 5060 Ti or RVC.
+- The probe requires the complete release versions to match; local CUDA build
+  suffixes such as `+cu128` are ignored for that comparison.
 - The exact runtime must be validated on the target PC before the Worker uses it.
 
 ## Run
@@ -28,7 +30,8 @@ or load a voice model.
 
 - Python 3.12 and 64-bit process.
 - PyTorch installed and CUDA build version.
-- Torchaudio installed and major/minor version aligned with PyTorch.
+- Torchaudio installed and full release version aligned with PyTorch (CUDA
+  local-version suffixes are ignored).
 - CUDA device discovery and device properties.
 - Free/total GPU memory when the runtime exposes it.
 - A real CUDA FP32 matrix operation followed by device synchronization and
