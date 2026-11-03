@@ -1,4 +1,5 @@
 #include "AudioIpc/AudioBlockSlotSync.h"
+#include "AudioIpc/AudioBlockTransport.h"
 
 #include <array>
 #include <atomic>
@@ -21,6 +22,96 @@ void check(bool condition, const char* expression, int line)
 #define CHECK(expression) check((expression), #expression, __LINE__)
 
 using namespace voice_studio::ipc;
+
+
+void initialiseAudioRegion(AudioBlockRegion& region)
+{
+    region.header.magic = kAudioBlockMagic;
+    region.header.version = kAudioBlockAbiVersion;
+    region.header.headerSize = sizeof(AudioBlockRegionHeader);
+    region.header.slotCount = kAudioBlockSlotCount;
+    region.header.slotSize = sizeof(AudioBlockSlot);
+    region.header.maxFrames = kAudioBlockMaxFrames;
+    region.header.maxChannels = kAudioBlockMaxChannels;
+    region.header.sampleFormat = kAudioBlockFloat32;
+    region.header.reserved = 0;
+}
+
+void testRealtimeTransportPublishAndConsume()
+{
+    AudioBlockRegion region {};
+    initialiseAudioRegion(region);
+    const float input[] = { -0.8f, -0.4f, 0.0f, 0.4f, 0.8f, 0.2f };
+    CHECK(tryPublishInputAudioBlock(region, input, 3, 2, 48000, 1, 9, 1000));
+    auto& source = region.slots[kAudioBlockInputSlotBegin];
+    CHECK(tryBeginAudioBlockRead(source));
+    CHECK(hasFiniteAudioBlockPayload(source));
+    CHECK(source.sequence == 1 && source.generation == 9);
+    auto& output = region.slots[kAudioBlockOutputSlotBegin];
+    CHECK(tryBeginAudioBlockWrite(output));
+    output.flags = source.flags;
+    output.sequence = source.sequence;
+    output.generation = source.generation;
+    output.deadlineMonotonicNs = source.deadlineMonotonicNs;
+    output.sampleRate = source.sampleRate;
+    output.channels = source.channels;
+    output.frames = source.frames;
+    output.payloadSamples = source.payloadSamples;
+    for (std::uint32_t i = 0; i < source.payloadSamples; ++i)
+        output.samples[i] = source.samples[i];
+    CHECK(publishAudioBlockWrite(output));
+    CHECK(finishAudioBlockRead(source));
+
+    float result[6] {};
+    CHECK(tryConsumeOutputAudioBlock(region, result, 6, 3, 2, 9, 999));
+    for (std::size_t i = 0; i < 6; ++i)
+        CHECK(result[i] == input[i]);
+    CHECK(!tryConsumeOutputAudioBlock(region, result, 6, 3, 2, 9, 999));
+}
+
+void testRealtimeTransportRejectsInvalidAndStaleData()
+{
+    AudioBlockRegion region {};
+    initialiseAudioRegion(region);
+    const float samples[] = { 0.1f, -0.1f };
+    CHECK(!tryPublishInputAudioBlock(region, samples, 1, 2, 48000, 0, 1, 100));
+    CHECK(!tryPublishInputAudioBlock(region, samples, 1, 2, 48000, 1, 1, 100));
+    CHECK(!tryPublishInputAudioBlock(region, samples, 1, 2, 48000, 1, 1, 100));
+    CHECK(tryPublishInputAudioBlock(region, samples, 1, 2, 48000, 1, 1, 100));
+    float result[2] { 7.0f, 8.0f };
+    CHECK(!tryConsumeOutputAudioBlock(region, result, 2, 1, 2, 1, 50));
+    CHECK(!tryConsumeOutputAudioBlock(region, result, 2, 1, 2, 2, 50));
+    CHECK(result[0] == 7.0f && result[1] == 8.0f);
+
+    auto& output = region.slots[kAudioBlockOutputSlotBegin];
+    CHECK(tryBeginAudioBlockWrite(output));
+    output.flags = 0;
+    output.sequence = 2;
+    output.generation = 1;
+    output.deadlineMonotonicNs = 99;
+    output.sampleRate = 48000;
+    output.channels = 2;
+    output.frames = 1;
+    output.payloadSamples = 2;
+    output.samples[0] = 0.3f;
+    output.samples[1] = -0.3f;
+    CHECK(publishAudioBlockWrite(output));
+    CHECK(!tryConsumeOutputAudioBlock(region, result, 2, 1, 2, 1, 100));
+    CHECK(output.state == static_cast<std::int32_t>(AudioBlockSlotState::free));
+    CHECK(result[0] == 7.0f && result[1] == 8.0f);
+}
+
+void testRealtimeTransportQueueOverflowIsNonDestructive()
+{
+    AudioBlockRegion region {};
+    initialiseAudioRegion(region);
+    const float sample[] = { 0.5f };
+    for (std::uint64_t sequence = 1; sequence <= kAudioBlockInputSlotCount; ++sequence)
+        CHECK(tryPublishInputAudioBlock(region, sample, 1, 1, 48000, sequence, 3, 1000));
+    CHECK(!tryPublishInputAudioBlock(region, sample, 1, 1, 48000, 99, 3, 1000));
+    for (std::uint32_t i = 0; i < kAudioBlockInputSlotCount; ++i)
+        CHECK(region.slots[i].sequence == i + 1);
+}
 
 void testSingleProducerConsumerTransitions()
 {
@@ -151,6 +242,9 @@ void testRecoveryAfterWorkerExit()
 }
 int main()
 {
+    testRealtimeTransportPublishAndConsume();
+    testRealtimeTransportRejectsInvalidAndStaleData();
+    testRealtimeTransportQueueOverflowIsNonDestructive();
     testSingleProducerConsumerTransitions();
     testOnlyOneConcurrentWriterWins();
     testProducerConsumerPublicationStress();
