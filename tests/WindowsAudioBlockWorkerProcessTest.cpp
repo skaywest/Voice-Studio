@@ -19,9 +19,15 @@ using namespace voice_studio::ipc;
 
 namespace
 {
+LONG readSlotState(const AudioBlockSlot& slot) noexcept
+{
+    return InterlockedCompareExchange(
+        reinterpret_cast<volatile LONG*>(const_cast<volatile std::int32_t*>(&slot.state)), 0, 0);
+}
+
 int fail(int code) noexcept
 {
-    std::fprintf(stderr, "WindowsAudioBlockWorkerProcessTest failed at checkpoint %d\\n", code);
+    std::fprintf(stderr, "WindowsAudioBlockWorkerProcessTest failed at checkpoint %d\n", code);
     return code;
 }
 
@@ -113,8 +119,8 @@ int wmain(int argc, wchar_t** argv)
         return fail(7);
     }
     Sleep(50);
-    if (input.state != static_cast<LONG>(AudioBlockSlotState::free) ||
-        mapping.get()->slots[kAudioBlockOutputSlotBegin].state != static_cast<LONG>(AudioBlockSlotState::free))
+    if (readSlotState(input) != static_cast<LONG>(AudioBlockSlotState::free) ||
+        readSlotState(mapping.get()->slots[kAudioBlockOutputSlotBegin]) != static_cast<LONG>(AudioBlockSlotState::free))
     {
         worker.shutdown();
         return fail(8);
