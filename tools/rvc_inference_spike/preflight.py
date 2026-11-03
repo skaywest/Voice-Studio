@@ -16,6 +16,11 @@ from typing import Any
 
 REQUIRED_FILES = (
     "configs/config.py",
+    "configs/v1/32k.json",
+    "configs/v1/40k.json",
+    "configs/v1/48k.json",
+    "configs/v2/32k.json",
+    "configs/v2/48k.json",
     "infer/rtrvc.py",
     "infer/hubert.py",
     "tools/cuda_graph.py",

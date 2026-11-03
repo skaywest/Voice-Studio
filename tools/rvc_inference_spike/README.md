@@ -32,7 +32,8 @@ this stage. No model is required to validate the RVC source/API and GPU runtime.
 
 ## Checks
 
-- Required upstream RVC source files exist.
+- Required upstream RVC source files and all five configuration profiles exist.
+  The upstream `Config` constructor loads every profile during initialization.
 - External Python executable starts and can import PyTorch, Torchaudio, NumPy,
   Librosa, FAISS and Parselmouth.
 - CUDA build version and a real FP32/FP16 CUDA operation with synchronization.

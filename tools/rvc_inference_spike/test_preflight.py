@@ -53,6 +53,20 @@ class PreflightTests(unittest.TestCase):
             self.assertFalse(report["runtime_probe"]["started"])
             self.assertEqual(runner.calls, [])
 
+    def test_missing_config_profile_prevents_subprocess(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp) / "rvc"
+            root.mkdir()
+            self.make_tree(root)
+            (root / "configs/v2/48k.json").unlink()
+            python = Path(temp) / "python.exe"
+            python.write_bytes(b"fake")
+            runner = FakeRunner()
+            report = run_preflight(python, root, runner=runner)
+            self.assertIn(str(root / "configs/v2/48k.json"), report["missing_files"])
+            self.assertFalse(report["runtime_probe"]["started"])
+            self.assertEqual(runner.calls, [])
+
     def test_missing_python_prevents_subprocess(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp) / "rvc"
