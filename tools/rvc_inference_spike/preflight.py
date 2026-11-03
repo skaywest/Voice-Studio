@@ -245,9 +245,13 @@ def run_preflight(
 
 def strict_cuda_requirements_met(checks: dict[str, Any]) -> bool:
     required = (
-        "python_312", "python_64bit", "cuda_128_build",
+        "python_312", "python_64bit",
+        "pytorch_installed", "torchaudio_installed",
+        "torchaudio_matches_torch",
+        "cuda_available", "cuda_128_build",
         "cuda_kernel_passed", "fp16_kernel_passed",
-        "rvc_api_imported", "rvc_api_compatible", "rvc_cuda_device_selected",
+        "rvc_api_imported", "rvc_api_compatible",
+        "rvc_cuda_device_selected",
     )
     return all(checks.get(key) is True for key in required)
 

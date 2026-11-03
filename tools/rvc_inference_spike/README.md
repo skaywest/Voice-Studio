@@ -41,6 +41,7 @@ this stage. No model is required to validate the RVC source/API and GPU runtime.
 - Actual imports of `configs.config` and `infer.rtrvc`.
 - `RVC` constructor and `RVC.infer` signatures match the expected adapter API.
 - Whether the RVC Config selects CUDA rather than silently falling back to CPU.
+- A strict readiness gate that rejects missing PyTorch/Torchaudio, mismatched package versions, unavailable CUDA, failed FP32/FP16 kernels, and incompatible RVC APIs.
 
 The current RTX 50-series target gate expects a CUDA 12.8 PyTorch build.
 A successful preflight still does not prove model compatibility or real-time

@@ -26,22 +26,28 @@ class PreflightTests(unittest.TestCase):
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text("# test fixture\n", encoding="utf-8")
 
-    def test_strict_cuda_gate_requires_python_312_x64(self):
-        checks = {
-            "cuda_128_build": True,
-            "cuda_kernel_passed": True,
-            "fp16_kernel_passed": True,
-            "rvc_api_imported": True,
-            "rvc_api_compatible": True,
-            "rvc_cuda_device_selected": True,
-        }
-        self.assertFalse(strict_cuda_requirements_met(checks))
-        checks["python_312"] = True
-        self.assertFalse(strict_cuda_requirements_met(checks))
-        checks["python_64bit"] = True
+    def test_strict_cuda_gate_requires_every_runtime_and_api_check(self):
+        required = (
+            "python_312", "python_64bit",
+            "pytorch_installed", "torchaudio_installed",
+            "torchaudio_matches_torch",
+            "cuda_available", "cuda_128_build",
+            "cuda_kernel_passed", "fp16_kernel_passed",
+            "rvc_api_imported", "rvc_api_compatible",
+            "rvc_cuda_device_selected",
+        )
+        checks = {key: True for key in required}
         self.assertTrue(strict_cuda_requirements_met(checks))
-        checks["python_312"] = False
-        self.assertFalse(strict_cuda_requirements_met(checks))
+
+        for key in required:
+            incomplete = dict(checks)
+            incomplete[key] = False
+            with self.subTest(missing_check=key):
+                self.assertFalse(strict_cuda_requirements_met(incomplete))
+
+        incomplete = dict(checks)
+        del incomplete["torchaudio_matches_torch"]
+        self.assertFalse(strict_cuda_requirements_met(incomplete))
 
     def test_missing_rvc_files_prevents_subprocess(self):
         with tempfile.TemporaryDirectory() as temp:
