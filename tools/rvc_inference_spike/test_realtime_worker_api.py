@@ -34,7 +34,7 @@ class RealtimeWorkerApiTests(unittest.TestCase):
 
     def test_missing_prewarm_method_is_rejected(self):
         source = COMPATIBLE_SOURCE.replace(
-            "    def prewarm(self):\n        pass\n\n", ""
+            "    def prewarm(self):" + chr(10) + "        pass" + chr(10) + chr(10), ""
         )
         report = self.inspect(source)
         self.assertFalse(report["compatible"])
