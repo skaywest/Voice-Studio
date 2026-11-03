@@ -3,6 +3,9 @@
 #include <juce_dsp/juce_dsp.h>
 #include "AudioIpc/AudioBlockRealtimeAccess.h"
 #include "AudioIpc/AudioBlockRealtimeBridge.h"
+#if defined(_WIN32)
+ #include "AudioIpc/WindowsWorkerController.h"
+#endif
 #include <array>
 #include <atomic>
 #include <cstdint>
@@ -11,6 +14,7 @@ class VoiceStudioAudioProcessor final : public juce::AudioProcessor
 {
 public:
     VoiceStudioAudioProcessor();
+    ~VoiceStudioAudioProcessor() override;
     void prepareToPlay(double, int) override;
     void releaseResources() override {}
     bool isBusesLayoutSupported(const BusesLayout&) const override;
@@ -37,6 +41,11 @@ public:
     voice_studio::ipc::AudioBlockRealtimeAccess& audioRealtimeAccess() noexcept { return realtimeAccess; }
     void setAiConversionAvailable(bool available, std::uint64_t generation = 0) noexcept;
     bool isAiConversionAvailable() const noexcept { return aiConversionAvailable.load(std::memory_order_acquire); }
+    bool launchWorker(const juce::File& executable);
+    void stopWorker() noexcept;
+    void serviceWorker() noexcept;
+    bool workerIsRunning() const noexcept;
+    juce::String workerStatusText() const;
 
 private:
     static APVTS::ParameterLayout createParameterLayout();
@@ -45,6 +54,9 @@ private:
     std::array<juce::dsp::Compressor<float>, 2> compressors;
     juce::SmoothedValue<float, juce::ValueSmoothingTypes::Linear> outputGainSmoother;
     voice_studio::ipc::AudioBlockRealtimeAccess realtimeAccess;
+#if defined(_WIN32)
+    voice_studio::ipc::WindowsWorkerController workerController { realtimeAccess };
+#endif
     voice_studio::ipc::AudioBlockRealtimeBridge realtimeBridge;
     std::atomic<bool> aiConversionAvailable { false };
     std::atomic<std::uint64_t> aiGeneration { 0 };

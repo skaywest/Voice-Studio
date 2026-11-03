@@ -3,7 +3,7 @@
 VoiceStudioAudioProcessorEditor::VoiceStudioAudioProcessorEditor(VoiceStudioAudioProcessor& p)
     : AudioProcessorEditor(&p), processor(p)
 {
-    setSize(580, 470);
+    setSize(580, 490);
     aiButton.setEnabled(false);
     aiAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment>(processor.parameters, "aiEnabled", aiButton);
     dspAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment>(processor.parameters, "dspEnabled", dspButton);
@@ -16,9 +16,28 @@ VoiceStudioAudioProcessorEditor::VoiceStudioAudioProcessorEditor(VoiceStudioAudi
     outputGainAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(processor.parameters, "outputGain", outputGainSlider);
     outputGainLabel.setText("OUTPUT LEVEL", juce::dontSendNotification);
     outputGainLabel.setColour(juce::Label::textColourId, juce::Colour(0xffb6c4cf));
-    statusLabel.setText("DSP READY  |  AI ENGINE NOT INSTALLED", juce::dontSendNotification);
+    statusLabel.setText("DSP READY  |  AI INFERENCE NOT INSTALLED", juce::dontSendNotification);
     statusLabel.setColour(juce::Label::textColourId, juce::Colour(0xffa9c7ae));
     statusLabel.setJustificationType(juce::Justification::centred);
+    workerStatusLabel.setText(processor.workerStatusText(), juce::dontSendNotification);
+    workerStatusLabel.setColour(juce::Label::textColourId, juce::Colour(0xff75c7d5));
+    workerStatusLabel.setJustificationType(juce::Justification::centred);
+    startWorkerButton.onClick = [this]
+    {
+        juce::FileChooser chooser("Select VoiceStudioWorker.exe", {}, "*.exe");
+        if (chooser.browseForFileToOpen())
+        {
+            if (!processor.launchWorker(chooser.getResult()))
+                workerStatusLabel.setText("WORKER START FAILED - CHECK EXE / PERMISSIONS", juce::dontSendNotification);
+            else
+                workerStatusLabel.setText(processor.workerStatusText(), juce::dontSendNotification);
+        }
+    };
+    stopWorkerButton.onClick = [this]
+    {
+        processor.stopWorker();
+        workerStatusLabel.setText(processor.workerStatusText(), juce::dontSendNotification);
+    };
 
     effectsTab.onClick = [this] { showPage(false); };
     libraryTab.onClick = [this] { showPage(true); };
@@ -48,14 +67,18 @@ VoiceStudioAudioProcessorEditor::VoiceStudioAudioProcessorEditor(VoiceStudioAudi
     addAndMakeVisible(aiButton); addAndMakeVisible(dspButton);
     addAndMakeVisible(highPassButton); addAndMakeVisible(presenceButton); addAndMakeVisible(compressorButton);
     addAndMakeVisible(outputGainSlider); addAndMakeVisible(outputGainLabel); addAndMakeVisible(statusLabel);
+    addAndMakeVisible(startWorkerButton); addAndMakeVisible(stopWorkerButton); addAndMakeVisible(workerStatusLabel);
     addAndMakeVisible(libraryHeading); addAndMakeVisible(libraryDescription);
     addAndMakeVisible(categoryLabel); addAndMakeVisible(categoryBox); addAndMakeVisible(emptyState); addAndMakeVisible(safetyNote);
     showPage(false);
+    startTimerHz(4);
 }
 
 void VoiceStudioAudioProcessorEditor::showPage(bool library)
 {
     aiButton.setVisible(!library); dspButton.setVisible(!library);
+    startWorkerButton.setVisible(!library); stopWorkerButton.setVisible(!library);
+    workerStatusLabel.setVisible(!library);
     highPassButton.setVisible(!library); presenceButton.setVisible(!library); compressorButton.setVisible(!library);
     outputGainSlider.setVisible(!library); outputGainLabel.setVisible(!library); statusLabel.setVisible(!library);
     libraryHeading.setVisible(library); libraryDescription.setVisible(library);
@@ -84,8 +107,19 @@ void VoiceStudioAudioProcessorEditor::resized()
     aiButton.setBounds(32, 128, 510, 30); dspButton.setBounds(32, 166, 510, 30);
     highPassButton.setBounds(48, 206, 480, 28); presenceButton.setBounds(48, 240, 480, 28);
     compressorButton.setBounds(48, 274, 480, 28); outputGainLabel.setBounds(32, 320, 150, 26);
-    outputGainSlider.setBounds(170, 320, 370, 26); statusLabel.setBounds(24, 400, 532, 28);
+    outputGainSlider.setBounds(170, 320, 370, 26);
+    startWorkerButton.setBounds(32, 360, 330, 30); stopWorkerButton.setBounds(370, 360, 172, 30);
+    workerStatusLabel.setBounds(24, 398, 532, 24); statusLabel.setBounds(24, 430, 532, 28);
     libraryHeading.setBounds(34, 132, 500, 30); libraryDescription.setBounds(34, 166, 510, 26);
     categoryLabel.setBounds(34, 210, 100, 26); categoryBox.setBounds(140, 210, 390, 28);
     emptyState.setBounds(40, 270, 500, 52); safetyNote.setBounds(42, 344, 496, 68);
+}
+
+void VoiceStudioAudioProcessorEditor::timerCallback()
+{
+    processor.serviceWorker();
+    workerStatusLabel.setText(processor.workerStatusText(), juce::dontSendNotification);
+    const bool running = processor.workerIsRunning();
+    startWorkerButton.setEnabled(!running);
+    stopWorkerButton.setEnabled(running);
 }

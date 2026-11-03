@@ -35,6 +35,11 @@ VoiceStudioAudioProcessor::VoiceStudioAudioProcessor()
 {
 }
 
+VoiceStudioAudioProcessor::~VoiceStudioAudioProcessor()
+{
+    stopWorker();
+}
+
 VoiceStudioAudioProcessor::APVTS::ParameterLayout VoiceStudioAudioProcessor::createParameterLayout()
 {
     APVTS::ParameterLayout layout;
@@ -168,6 +173,79 @@ void VoiceStudioAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, j
             buffer.setSample(ch, i, sample * gain);
         }
     }
+}
+
+
+bool VoiceStudioAudioProcessor::launchWorker(const juce::File& executable)
+{
+#if defined(_WIN32)
+    if (!executable.existsAsFile() || !executable.getFileName().equalsIgnoreCase("VoiceStudioWorker.exe"))
+        return false;
+    static std::atomic<std::uint64_t> nextPipeId { 1 };
+    const auto pipeId = nextPipeId.fetch_add(1, std::memory_order_relaxed);
+    const std::wstring pipeName = L"\\\\.\\pipe\\VoiceStudio-" +
+        std::to_wstring(GetCurrentProcessId()) + L"-" + std::to_wstring(pipeId);
+    setAiConversionAvailable(false);
+    return workerController.launch(executable.getFullPathName().toWideCharPointer(),
+                                   pipeName, monotonicNowNs(), 5000);
+#else
+    juce::ignoreUnused(executable);
+    return false;
+#endif
+}
+
+void VoiceStudioAudioProcessor::stopWorker() noexcept
+{
+    setAiConversionAvailable(false);
+#if defined(_WIN32)
+    workerController.shutdown();
+#endif
+}
+
+void VoiceStudioAudioProcessor::serviceWorker() noexcept
+{
+#if defined(_WIN32)
+    const auto state = workerController.currentState();
+    if (state != voice_studio::ipc::WorkerLifecycleState::disabled &&
+        state != voice_studio::ipc::WorkerLifecycleState::faulted)
+    {
+        workerController.pollStatus(1);
+        workerController.tick(monotonicNowNs(), 1000);
+    }
+    const bool available = workerController.audioConversionAvailable();
+    setAiConversionAvailable(available, available ? workerController.generation() : 0);
+#endif
+}
+
+bool VoiceStudioAudioProcessor::workerIsRunning() const noexcept
+{
+#if defined(_WIN32)
+    const auto state = workerController.currentState();
+    return state != voice_studio::ipc::WorkerLifecycleState::disabled &&
+           state != voice_studio::ipc::WorkerLifecycleState::faulted;
+#else
+    return false;
+#endif
+}
+
+juce::String VoiceStudioAudioProcessor::workerStatusText() const
+{
+#if defined(_WIN32)
+    using State = voice_studio::ipc::WorkerLifecycleState;
+    switch (workerController.currentState())
+    {
+        case State::disabled: return "WORKER STOPPED";
+        case State::starting: return "WORKER STARTING...";
+        case State::ready: return "WORKER READY - AI ENGINE NOT INSTALLED";
+        case State::enabling: return "AI ENGINE STARTING...";
+        case State::running: return "AI ENGINE RUNNING";
+        case State::coolingDown: return "AI STOPPED - MODEL COOLDOWN";
+        case State::unloading: return "UNLOADING MODEL...";
+        case State::stopping: return "WORKER STOPPING...";
+        case State::faulted: return "WORKER ERROR / STOPPED";
+    }
+#endif
+    return "WORKER CONTROL AVAILABLE ON WINDOWS ONLY";
 }
 
 juce::AudioProcessorEditor* VoiceStudioAudioProcessor::createEditor()
