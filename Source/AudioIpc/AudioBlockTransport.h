@@ -91,40 +91,36 @@ inline bool tryConsumeOutputAudioBlock(AudioBlockRegion& region,
         if (!tryBeginAudioBlockRead(slot))
             continue;
 
-        // Keep future blocks queued; discard stale blocks so a late Worker
-        // response can never be applied to a different audio callback.
-        if (slot.sequence > expectedSequence)
-        {
-            if (!returnAudioBlockReadToReady(slot))
-                return false;
-            continue;
-        }
-        if (slot.sequence < expectedSequence)
+        // Reject malformed, expired, or incompatible blocks before considering
+        // their sequence. Only a valid future block may be returned to READY.
+        const bool compatible = hasFiniteAudioBlockPayload(slot) &&
+            slot.generation == expectedGeneration &&
+            slot.deadlineMonotonicNs > nowMonotonicNs &&
+            slot.frames == expectedFrames &&
+            slot.channels == expectedChannels &&
+            slot.sampleRate == expectedSampleRate;
+        if (!compatible || slot.sequence < expectedSequence)
         {
             if (!finishAudioBlockRead(slot))
                 return false;
             continue;
         }
 
-        const bool usable = hasFiniteAudioBlockPayload(slot) &&
-            slot.sequence == expectedSequence &&
-            slot.generation == expectedGeneration &&
-            slot.deadlineMonotonicNs > nowMonotonicNs &&
-            slot.frames == expectedFrames &&
-            slot.channels == expectedChannels &&
-            slot.sampleRate == expectedSampleRate;
-
-        if (usable)
+        // Keep valid future blocks queued; never apply them to an earlier
+        // callback. Stale blocks above are released rather than retained.
+        if (slot.sequence > expectedSequence)
         {
-            for (std::uint32_t sample = 0; sample < expectedSamples; ++sample)
-                interleavedDestination[sample] = slot.samples[sample];
+            if (!returnAudioBlockReadToReady(slot))
+                return false;
+            continue;
         }
 
-        const bool released = finishAudioBlockRead(slot);
-        if (usable && released)
+        for (std::uint32_t sample = 0; sample < expectedSamples; ++sample)
+            interleavedDestination[sample] = slot.samples[sample];
+
+        if (finishAudioBlockRead(slot))
             return true;
-        if (!released)
-            return false;
+        return false;
     }
     return false;
 }
