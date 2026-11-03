@@ -39,7 +39,7 @@ class RealtimeWorkerApiTests(unittest.TestCase):
     def test_missing_engine_class_is_rejected(self):
         with tempfile.TemporaryDirectory() as temp:
             path = Path(temp) / "rvc_worker.py"
-            path.write_text("class OtherEngine:\\n    pass\\n", encoding="utf-8")
+            path.write_text("class OtherEngine:" + chr(10) + "    pass" + chr(10), encoding="utf-8")
             report = inspect_realtime_worker_api(path)
             self.assertFalse(report["available"])
             self.assertFalse(report["compatible"])
@@ -58,7 +58,7 @@ class RealtimeWorkerApiTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp:
             path = Path(temp) / "rvc_worker.py"
             path.write_text(
-                "raise RuntimeError('must not execute')\\n" + COMPATIBLE_SOURCE,
+                "raise RuntimeError('must not execute')" + chr(10) + COMPATIBLE_SOURCE,
                 encoding="utf-8",
             )
             report = inspect_realtime_worker_api(path)
