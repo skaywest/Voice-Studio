@@ -81,6 +81,12 @@ if(VOICE_STUDIO_BUILD_SMOKE_TESTS)
     target_compile_features(VoiceStudioAudioQueueTest PRIVATE cxx_std_17)
     add_test(NAME VoiceStudioAudioQueueTest COMMAND VoiceStudioAudioQueueTest)
 
+    # Fixed-size RVC stream adapter: host block accumulation, bounded queues and output slicing.
+    add_executable(VoiceStudioRvcAudioStreamAdapterTest tests/RvcAudioStreamAdapterTest.cpp)
+    target_include_directories(VoiceStudioRvcAudioStreamAdapterTest PRIVATE Source)
+    target_compile_features(VoiceStudioRvcAudioStreamAdapterTest PRIVATE cxx_std_17)
+    add_test(NAME VoiceStudioRvcAudioStreamAdapterTest COMMAND VoiceStudioRvcAudioStreamAdapterTest)
+
     # Portable validation tests for the fixed shared-memory ABI layout.
     add_executable(VoiceStudioSharedMemoryAbiTest tests/SharedMemoryAbiTest.cpp)
     target_include_directories(VoiceStudioSharedMemoryAbiTest PRIVATE Source)
