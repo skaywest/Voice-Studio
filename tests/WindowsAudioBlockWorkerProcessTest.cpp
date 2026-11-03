@@ -189,8 +189,13 @@ int wmain(int argc, wchar_t** argv)
     while (!receivedStopAck && GetTickCount64() < stopDeadline)
     {
         WorkerStatusMessage status{};
-        if (!pipe.receiveStatus(status, 500) || status.generation != generation ||
-            status.requestId > 2)
+        // A read timeout is not a protocol failure: the Worker may be
+        // servicing its audio queue or between heartbeat intervals. Retry
+        // until the overall acknowledgement deadline; only malformed or
+        // out-of-generation messages terminate the wait early.
+        if (!pipe.receiveStatus(status, 250))
+            continue;
+        if (status.generation != generation || status.requestId > 2)
             break;
 
         if (status.requestId == 2)
