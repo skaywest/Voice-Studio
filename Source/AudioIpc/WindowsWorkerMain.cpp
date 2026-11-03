@@ -52,7 +52,7 @@ WorkerStatusMessage makeStatus(WorkerState state, WorkerResult result,
 
 // Transport-only echo path used to prove cross-process audio ownership and
 // payload visibility. This is deliberately not voice conversion or AI.
-void transferAvailableAudioBlocks(AudioBlockRegion& region) noexcept
+void transferAvailableAudioBlocks(AudioBlockRegion& region, std::uint64_t generation, std::uint64_t nowNs) noexcept
 {
     for (std::uint32_t inputIndex = kAudioBlockInputSlotBegin;
          inputIndex < kAudioBlockInputSlotBegin + kAudioBlockInputSlotCount; ++inputIndex)
@@ -60,7 +60,7 @@ void transferAvailableAudioBlocks(AudioBlockRegion& region) noexcept
         auto& input = region.slots[inputIndex];
         if (!tryBeginAudioBlockRead(input))
             continue;
-        if (!hasFiniteAudioBlockPayload(input))
+        if (!hasFiniteAudioBlockPayload(input) || input.generation != generation || input.deadlineMonotonicNs <= nowNs)
         {
             finishAudioBlockRead(input);
             continue;
@@ -117,7 +117,7 @@ int runWorker(const std::wstring& pipeName, const std::wstring& mappingName,
         WorkerCommandMessage command{};
         if (!pipe.receiveCommand(command, 10))
         {
-            transferAvailableAudioBlocks(*audioMapping.get());
+            transferAvailableAudioBlocks(*audioMapping.get(), generation, monotonicNs());
             const auto now = monotonicNs();
             if (now - lastHeartbeatNs >= 500'000'000ull)
             {
