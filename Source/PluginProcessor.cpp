@@ -33,6 +33,7 @@ VoiceStudioAudioProcessor::VoiceStudioAudioProcessor()
           .withOutput("Output", juce::AudioChannelSet::stereo(), true)),
       parameters(*this, nullptr, "PARAMETERS", createParameterLayout())
 {
+    parameters.addParameterListener("aiEnabled", this);
 #if defined(_WIN32)
     try
     {
@@ -48,6 +49,7 @@ VoiceStudioAudioProcessor::VoiceStudioAudioProcessor()
 
 VoiceStudioAudioProcessor::~VoiceStudioAudioProcessor()
 {
+    parameters.removeParameterListener("aiEnabled", this);
 #if defined(_WIN32)
     stopWorker();
     {
@@ -137,13 +139,14 @@ void VoiceStudioAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, j
         channels >= 1 && isRealtime() == juce::AudioProcessor::Realtime::yes)
     {
         const auto generation = aiGeneration.load(std::memory_order_acquire);
-        if (generation != 0 &&
+        const auto sessionGeneration = aiSessionGeneration.load(std::memory_order_acquire);
+        if (generation != 0 && sessionGeneration != 0 &&
             rvcAudioStream.pushHostInput(buffer.getReadPointer(0),
                 channels > 1 ? buffer.getReadPointer(1) : nullptr,
-                frames, static_cast<std::uint32_t>(channels), generation))
+                frames, static_cast<std::uint32_t>(channels), generation, sessionGeneration))
         {
             const auto converted = rvcOutputScratch.data();
-            const auto read = rvcAudioStream.pullConvertedOutput(converted, frames, generation);
+            const auto read = rvcAudioStream.pullConvertedOutput(converted, frames, generation, sessionGeneration);
             for (std::uint32_t i = 0; i < read.frames; ++i)
                 for (int ch = 0; ch < channels; ++ch)
                     buffer.setSample(ch, static_cast<int>(i), converted[i]);
@@ -336,10 +339,11 @@ void VoiceStudioAudioProcessor::workerControlLoop() noexcept
                     if (audioAccess)
                     {
                         const auto pumpTimeNs = monotonicNowNs();
-                        rvcAudioPump.collectReadyOutput(*audioAccess, pumpTimeNs);
+                        const auto sessionGeneration = aiSessionGeneration.load(std::memory_order_acquire);
+                        rvcAudioPump.collectReadyOutput(*audioAccess, pumpTimeNs, sessionGeneration);
                         rvcAudioPump.publishPendingInput(*audioAccess, pumpTimeNs,
                             voice_studio::ipc::RvcAudioTransportPump::kDefaultDeadlineBudgetNs,
-                            workerController.generation());
+                            workerController.generation(), sessionGeneration);
                     }
                 }
 
@@ -435,6 +439,12 @@ void VoiceStudioAudioProcessor::setStateInformation(const void* data, int size)
 juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
 {
     return new VoiceStudioAudioProcessor();
+}
+
+void VoiceStudioAudioProcessor::parameterChanged(const juce::String& parameterID, float newValue)
+{
+    if (parameterID == "aiEnabled" && newValue > 0.5f)
+        aiSessionGeneration.fetch_add(1, std::memory_order_acq_rel);
 }
 
 void VoiceStudioAudioProcessor::setAiConversionAvailable(bool available, std::uint64_t generation) noexcept

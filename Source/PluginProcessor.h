@@ -19,7 +19,8 @@
  #include <thread>
 #endif
 
-class VoiceStudioAudioProcessor final : public juce::AudioProcessor
+class VoiceStudioAudioProcessor final : public juce::AudioProcessor,
+                                        private juce::AudioProcessorValueTreeState::Listener
 {
 public:
     VoiceStudioAudioProcessor();
@@ -56,6 +57,7 @@ public:
     juce::String workerStatusText() const;
 
 private:
+    void parameterChanged(const juce::String& parameterID, float newValue) override;
     static APVTS::ParameterLayout createParameterLayout();
     std::array<juce::dsp::IIR::Filter<float>, 2> highPassFilters;
     std::array<juce::dsp::IIR::Filter<float>, 2> presenceFilters;
@@ -86,6 +88,7 @@ private:
 #endif
     std::atomic<bool> aiConversionAvailable { false };
     std::atomic<std::uint64_t> aiGeneration { 0 };
+    std::atomic<std::uint64_t> aiSessionGeneration { 1 };
     std::uint32_t preparedSampleRate = 0;
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(VoiceStudioAudioProcessor)
 };
