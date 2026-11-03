@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import math
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any, Iterator, Protocol
 
 HOST_SAMPLE_RATE = 48_000
 HOST_BLOCK_FRAMES = 2_880
@@ -17,6 +17,14 @@ HOST_CHANNELS = 1
 HOST_BLOCK_MS = 60.0
 RVC_CROSSFADE_MS = 40.0
 RVC_EXTRA_MS = 2_000.0
+
+
+class AudioBuffer(Protocol):
+    """Sized, iterable audio storage (for example a NumPy array)."""
+
+    def __len__(self) -> int: ...
+
+    def __iter__(self) -> Iterator[float]: ...
 
 
 class StreamContractError(RuntimeError):
@@ -96,7 +104,7 @@ class RvcRealtimeAdapter:
 
     def process(
         self,
-        audio: Iterable[float],
+        audio: AudioBuffer,
         pitch: float,
         formant: float,
         index_rate: float,
@@ -104,19 +112,39 @@ class RvcRealtimeAdapter:
         threshold: float,
         f0_method: int,
     ):
-        if len(audio) != HOST_BLOCK_FRAMES:  # type: ignore[arg-type]
+        try:
+            input_frames = len(audio)
+            input_samples = iter(audio)
+        except TypeError as exc:
+            raise StreamContractError("input block must be a sized, iterable audio buffer") from exc
+        if input_frames != HOST_BLOCK_FRAMES:
             raise StreamContractError(
-                f"input block has {len(audio)} frames; expected {HOST_BLOCK_FRAMES}"  # type: ignore[arg-type]
+                f"input block has {input_frames} frames; expected {HOST_BLOCK_FRAMES}"
             )
+        for index, sample in enumerate(input_samples):
+            try:
+                finite = math.isfinite(float(sample))
+            except (TypeError, ValueError, OverflowError):
+                finite = False
+            if not finite:
+                raise StreamContractError(
+                    f"input block contains a non-finite sample at index {index}"
+                )
         output = self.engine.process(
             audio, pitch, formant, index_rate, rms_mix, threshold, f0_method
         )
-        if output is None or len(output) != HOST_BLOCK_FRAMES:
-            actual = None if output is None else len(output)
+        if output is None:
+            raise StreamContractError("RVC output is missing; expected 2880 frames")
+        try:
+            output_frames = len(output)
+            output_samples = iter(output)
+        except TypeError as exc:
+            raise StreamContractError("RVC output must be a sized, iterable audio buffer") from exc
+        if output_frames != HOST_BLOCK_FRAMES:
             raise StreamContractError(
-                f"RVC output has {actual} frames; expected {HOST_BLOCK_FRAMES}"
+                f"RVC output has {output_frames} frames; expected {HOST_BLOCK_FRAMES}"
             )
-        for index, sample in enumerate(output):
+        for index, sample in enumerate(output_samples):
             try:
                 finite = math.isfinite(float(sample))
             except (TypeError, ValueError, OverflowError):

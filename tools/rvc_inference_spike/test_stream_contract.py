@@ -100,6 +100,20 @@ class StreamContractTests(unittest.TestCase):
         with self.assertRaises(StreamContractError):
             adapter.process([0.0] * HOST_BLOCK_FRAMES, 0, 0, 0, 0.5, -60, 0)
 
+    def test_adapter_rejects_unsized_input(self):
+        adapter = RvcRealtimeAdapter(FakeEngine())
+        with self.assertRaisesRegex(StreamContractError, "sized, iterable"):
+            adapter.process(iter([0.0] * HOST_BLOCK_FRAMES), 0, 0, 0, 0.5, -60, 0)
+
+    def test_adapter_rejects_non_finite_input_samples_before_engine_call(self):
+        audio = [0.0] * HOST_BLOCK_FRAMES
+        audio[17] = float("inf")
+        engine = FakeEngine()
+        adapter = RvcRealtimeAdapter(engine)
+        with self.assertRaisesRegex(StreamContractError, "input block.*index 17"):
+            adapter.process(audio, 0, 0, 0, 0.5, -60, 0)
+        self.assertEqual(engine.calls, 0)
+
     def test_adapter_rejects_non_finite_output_samples(self):
         output = [0.0] * HOST_BLOCK_FRAMES
         output[123] = float("nan")
