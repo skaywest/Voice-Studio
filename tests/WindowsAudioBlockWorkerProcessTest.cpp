@@ -175,10 +175,33 @@ int wmain(int argc, wchar_t** argv)
 
     const auto stop = makeCommand(WorkerCommand::stop, generation, 2);
     WorkerStatusMessage stopped{};
-    if (!pipe.sendCommand(stop, 1000) ||
-        !pipe.receiveStatus(stopped, 3000) ||
+    if (!pipe.sendCommand(stop, 1000))
+    {
+        worker.shutdown();
+        return fail(13);
+    }
+
+    // The Worker may already have queued a periodic READY heartbeat carrying
+    // requestId 1. Drain those older statuses and wait for the STOP ack (2).
+    bool receivedStopAck = false;
+    for (int attempt = 0; attempt < 6 && !receivedStopAck; ++attempt)
+    {
+        WorkerStatusMessage status{};
+        if (!pipe.receiveStatus(status, 1000) ||
+            status.generation != generation ||
+            status.requestId > 2)
+            break;
+
+        if (status.requestId == 2)
+        {
+            stopped = status;
+            receivedStopAck = true;
+        }
+    }
+
+    if (!receivedStopAck ||
         stopped.state != static_cast<std::uint16_t>(WorkerState::ready) ||
-        stopped.requestId != 2)
+        stopped.result != static_cast<std::uint32_t>(WorkerResult::ok))
     {
         worker.shutdown();
         return fail(13);
