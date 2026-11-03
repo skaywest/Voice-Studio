@@ -4,7 +4,7 @@ import tempfile
 import unittest
 from types import SimpleNamespace
 
-from preflight import REQUIRED_FILES, run_preflight, strict_cuda_requirements_met
+from preflight import REQUIRED_FILES, release_version, run_preflight, strict_cuda_requirements_met
 
 
 class FakeRunner:
@@ -48,6 +48,14 @@ class PreflightTests(unittest.TestCase):
         incomplete = dict(checks)
         del incomplete["torchaudio_matches_torch"]
         self.assertFalse(strict_cuda_requirements_met(incomplete))
+
+    def test_release_version_requires_full_match_but_ignores_cuda_build_tag(self):
+        self.assertEqual(release_version("2.7.1+cu128"), "2.7.1")
+        self.assertEqual(release_version("2.7.1"), "2.7.1")
+        self.assertNotEqual(
+            release_version("2.7.1+cu128"),
+            release_version("2.7.2+cu128"),
+        )
 
     def test_missing_rvc_files_prevents_subprocess(self):
         with tempfile.TemporaryDirectory() as temp:

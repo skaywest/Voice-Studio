@@ -36,7 +36,8 @@ this stage. No model is required to validate the RVC source/API and GPU runtime.
   The upstream `Config` constructor loads every profile during initialization.
 - External Python executable starts and can import PyTorch, Torchaudio, NumPy,
   Librosa, FAISS and Parselmouth.
-- CUDA build version and a real FP32/FP16 CUDA operation with synchronization.
+- CUDA availability, build version and real FP32/FP16 CUDA operations with synchronization.
+- Explicit PyTorch/Torchaudio installation flags and full release-version matching (CUDA build suffixes are ignored).
 - GPU name, compute capability and available memory.
 - Actual imports of `configs.config` and `infer.rtrvc`.
 - `RVC` constructor and `RVC.infer` signatures match the expected adapter API.

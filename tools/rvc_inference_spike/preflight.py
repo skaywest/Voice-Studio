@@ -28,6 +28,11 @@ REQUIRED_FILES = (
 REQUIRED_MODULES = ("torch", "torchaudio", "numpy", "librosa", "faiss", "parselmouth")
 
 
+def release_version(value: str) -> str:
+    """Return the full PEP 440 release portion, ignoring local CUDA build tags."""
+    return str(value).split("+", 1)[0].strip()
+
+
 def _runtime_probe(rvc_root: Path) -> dict[str, Any]:
     root = rvc_root.resolve()
     report: dict[str, Any] = {
@@ -43,8 +48,20 @@ def _runtime_probe(rvc_root: Path) -> dict[str, Any]:
         "model_loaded": False,
         "inference_tested": False,
     }
-    report["checks"]["python_312"] = sys.version_info[:2] == (3, 12)
-    report["checks"]["python_64bit"] = struct.calcsize("P") * 8 == 64
+    report["checks"].update({
+        "python_312": sys.version_info[:2] == (3, 12),
+        "python_64bit": struct.calcsize("P") * 8 == 64,
+        "pytorch_installed": False,
+        "torchaudio_installed": False,
+        "torchaudio_matches_torch": False,
+        "cuda_available": False,
+        "cuda_128_build": False,
+        "cuda_kernel_passed": False,
+        "fp16_kernel_passed": False,
+        "rvc_api_imported": False,
+        "rvc_api_compatible": False,
+        "rvc_cuda_device_selected": False,
+    })
     os.chdir(root)
     sys.path.insert(0, str(root))
     sys.argv = [sys.argv[0]]
@@ -63,6 +80,9 @@ def _runtime_probe(rvc_root: Path) -> dict[str, Any]:
             }
 
     torch_info = report["imports"].get("torch", {})
+    audio_info = report["imports"].get("torchaudio", {})
+    report["checks"]["pytorch_installed"] = torch_info.get("available") is True
+    report["checks"]["torchaudio_installed"] = audio_info.get("available") is True
     if torch_info.get("available"):
         torch = importlib.import_module("torch")
         cuda_build = getattr(getattr(torch, "version", None), "cuda", None)
@@ -73,7 +93,9 @@ def _runtime_probe(rvc_root: Path) -> dict[str, Any]:
         }
         report["checks"]["cuda_128_build"] = str(cuda_build or "").startswith("12.8")
         try:
-            if torch.cuda.is_available():
+            cuda_available = bool(torch.cuda.is_available())
+            report["checks"]["cuda_available"] = cuda_available
+            if cuda_available:
                 device_index = int(torch.cuda.current_device())
                 props = torch.cuda.get_device_properties(device_index)
                 free_bytes, total_bytes = torch.cuda.mem_get_info(device_index)
@@ -110,10 +132,8 @@ def _runtime_probe(rvc_root: Path) -> dict[str, Any]:
     audio = report["imports"].get("torchaudio", {})
     torch = report.get("pytorch", {})
     if audio.get("available") and torch.get("version"):
-        def major_minor(value: str) -> str:
-            return ".".join(str(value).split("+", 1)[0].split(".")[:2])
         report["checks"]["torchaudio_matches_torch"] = (
-            major_minor(audio["version"]) == major_minor(torch["version"])
+            release_version(audio["version"]) == release_version(torch["version"])
         )
 
     # Import the actual upstream RVC modules only after dependency diagnostics.
