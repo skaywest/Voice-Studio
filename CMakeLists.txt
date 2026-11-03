@@ -129,6 +129,15 @@ if(VOICE_STUDIO_BUILD_SMOKE_TESTS)
                  COMMAND VoiceStudioWindowsWorkerControllerTest $<TARGET_FILE:VoiceStudioWorker>)
         set_tests_properties(VoiceStudioWindowsWorkerControllerTest PROPERTIES TIMEOUT 20)
 
+        # Real separate-process audio payload exchange through the production Worker.
+        add_executable(VoiceStudioWindowsAudioBlockWorkerProcessTest tests/WindowsAudioBlockWorkerProcessTest.cpp)
+        target_include_directories(VoiceStudioWindowsAudioBlockWorkerProcessTest PRIVATE Source)
+        target_compile_features(VoiceStudioWindowsAudioBlockWorkerProcessTest PRIVATE cxx_std_17)
+        target_link_libraries(VoiceStudioWindowsAudioBlockWorkerProcessTest PRIVATE advapi32)
+        add_test(NAME VoiceStudioWindowsAudioBlockWorkerProcessTest
+                 COMMAND VoiceStudioWindowsAudioBlockWorkerProcessTest $<TARGET_FILE:VoiceStudioWorker>)
+        set_tests_properties(VoiceStudioWindowsAudioBlockWorkerProcessTest PROPERTIES TIMEOUT 20)
+
         # Windows shared audio mapping owner/client and slot handoff test.
         add_executable(VoiceStudioWindowsAudioBlockMappingTest tests/WindowsAudioBlockMappingTest.cpp)
         target_include_directories(VoiceStudioWindowsAudioBlockMappingTest PRIVATE Source)
