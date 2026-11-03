@@ -31,6 +31,11 @@ public:
         return apply(lifecycle.userStart(nowNs));
     }
 
+    WorkerControlDecision configureModel() noexcept
+    {
+        return apply(lifecycle.userConfigureModel());
+    }
+
     WorkerControlDecision enableAi(std::uint32_t timeoutMs = 30000) noexcept
     {
         return apply(lifecycle.userEnableAi(), timeoutMs);
@@ -94,6 +99,7 @@ private:
         WorkerControlDecision decision{};
         decision.action = action;
         if (action == WorkerLifecycleAction::sendStart ||
+            action == WorkerLifecycleAction::sendConfigureModel ||
             action == WorkerLifecycleAction::sendStop ||
             action == WorkerLifecycleAction::sendUnloadNow)
         {

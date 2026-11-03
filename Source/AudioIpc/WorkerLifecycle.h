@@ -28,6 +28,7 @@ enum class WorkerLifecycleAction : std::uint8_t
     none,
     launchWorker,
     sendStart,
+    sendConfigureModel,
     sendStop,
     sendUnloadNow,
     terminateWorker
@@ -113,6 +114,16 @@ public:
                 break;
         }
         return true;
+    }
+
+    WorkerLifecycleAction userConfigureModel() noexcept
+    {
+        if (state != WorkerLifecycleState::ready)
+            return WorkerLifecycleAction::none;
+        ++requestId;
+        if (requestId == 0)
+            ++requestId;
+        return WorkerLifecycleAction::sendConfigureModel;
     }
 
     WorkerLifecycleAction userEnableAi() noexcept

@@ -8,6 +8,7 @@
 
 #include "AudioIpc/WindowsAudioBlockMapping.h"
 #include "AudioIpc/WindowsWorkerControlPipe.h"
+#include "AudioIpc/WorkerModelFileVerifier.h"
 
 #include <cerrno>
 #include <cstdint>
@@ -110,6 +111,7 @@ int runWorker(const std::wstring& pipeName, const std::wstring& mappingName,
         return 11;
 
     std::uint64_t activeRequestId = requestId;
+    bool modelFilesVerified = false;
     std::uint64_t lastHeartbeatNs = monotonicNs();
 
     for (;;)
@@ -137,10 +139,30 @@ int runWorker(const std::wstring& pipeName, const std::wstring& mappingName,
         lastHeartbeatNs = monotonicNs();
 
         const auto operation = static_cast<WorkerCommand>(command.command);
+        if (operation == WorkerCommand::configureModel)
+        {
+            WorkerModelConfigMessage config{};
+            if (!pipe.receiveModelConfig(config, command.timeoutMs) ||
+                !matchesWorkerModelConfigRequest(config, generation, activeRequestId) ||
+                !verifyWorkerModelConfigFiles(config))
+            {
+                pipe.sendStatus(makeStatus(WorkerState::error, WorkerResult::invalidRequest,
+                                           generation, activeRequestId), 1000);
+                return 17;
+            }
+
+            modelFilesVerified = true;
+            if (!pipe.sendStatus(makeStatus(WorkerState::ready, WorkerResult::ok,
+                                            generation, activeRequestId), 1000))
+                return 18;
+            continue;
+        }
+
         if (operation == WorkerCommand::start)
         {
-            // Deliberately fail closed: this protocol Worker has no inference
-            // engine yet and must never claim that AI conversion is running.
+            // File verification is not inference. Keep AI unavailable until a
+            // real, audited RVC backend is present, even after a valid manifest.
+            (void) modelFilesVerified;
             return pipe.sendStatus(makeStatus(WorkerState::error,
                                               WorkerResult::unsupported,
                                               generation, activeRequestId), 1000)

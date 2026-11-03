@@ -36,6 +36,13 @@ int main()
     assert(control.currentState() == WorkerLifecycleState::ready);
     assert(!control.audioConversionAvailable());
 
+    const auto configure = control.configureModel();
+    assert(configure.action == WorkerLifecycleAction::sendConfigureModel);
+    assert(configure.hasCommand);
+    assert(configure.command.command == static_cast<std::uint16_t>(WorkerCommand::configureModel));
+    assert(control.acceptStatus(makeStatus(control, WorkerState::ready, 225)));
+    assert(!control.audioConversionAvailable());
+
     const auto start = control.enableAi(2500);
     assert(start.action == WorkerLifecycleAction::sendStart);
     assert(start.hasCommand);

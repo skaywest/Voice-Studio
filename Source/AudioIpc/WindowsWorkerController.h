@@ -89,6 +89,36 @@ public:
         return true;
     }
 
+    // Transfers a fixed-size model manifest and verifies every referenced file
+    // inside the Worker. This is validation only; it does not load an inference
+    // runtime or make audio conversion available.
+    bool configureModel(WorkerModelConfigMessage config,
+                        std::uint32_t timeoutMs = 30000) noexcept
+    {
+        if (!active || !hasValidWorkerModelConfig(config))
+            return false;
+
+        const auto decision = coordinator.configureModel();
+        if (decision.action != WorkerLifecycleAction::sendConfigureModel ||
+            !decision.hasCommand)
+            return false;
+
+        config.generation = decision.command.generation;
+        config.requestId = decision.command.requestId;
+        config.size = static_cast<std::uint16_t>(sizeof(config));
+        if (!hasValidWorkerModelConfig(config) ||
+            !pipe.sendCommand(decision.command, timeoutMs) ||
+            !pipe.sendModelConfig(config, timeoutMs))
+            return terminateAndFault();
+
+        WorkerStatusMessage status{};
+        if (!pipe.receiveStatus(status, timeoutMs) ||
+            !coordinator.acceptStatus(status) ||
+            coordinator.currentState() == WorkerLifecycleState::faulted)
+            return terminateAndFault();
+        return coordinator.currentState() == WorkerLifecycleState::ready;
+    }
+
     bool enableAi(std::uint32_t timeoutMs = 30000) noexcept
     {
         return execute(coordinator.enableAi(timeoutMs), timeoutMs);
