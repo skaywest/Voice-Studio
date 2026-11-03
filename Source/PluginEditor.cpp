@@ -23,7 +23,7 @@ VoiceStudioAudioProcessorEditor::VoiceStudioAudioProcessorEditor(VoiceStudioAudi
     effectsTab.onClick = [this] { showPage(false); };
     libraryTab.onClick = [this] { showPage(true); };
     libraryHeading.setText("VOICE LIBRARY", juce::dontSendNotification);
-    libraryHeading.setFont(juce::Font(20.0f, juce::Font::bold));
+    libraryHeading.setFont(juce::Font(juce::FontOptions(20.0f, juce::Font::bold)));
     libraryHeading.setColour(juce::Label::textColourId, juce::Colour(0xff75c7d5));
     libraryDescription.setText("Browse the local voice collection. No models are installed yet.", juce::dontSendNotification);
     libraryDescription.setColour(juce::Label::textColourId, juce::Colour(0xffb6c4cf));
@@ -37,7 +37,7 @@ VoiceStudioAudioProcessorEditor::VoiceStudioAudioProcessorEditor(VoiceStudioAudi
     categoryBox.addItem("Anime / stylized", 6);
     categoryBox.setSelectedId(1, juce::dontSendNotification);
     emptyState.setText("THE LIBRARY IS EMPTY", juce::dontSendNotification);
-    emptyState.setFont(juce::Font(17.0f, juce::Font::bold));
+    emptyState.setFont(juce::Font(juce::FontOptions(17.0f, juce::Font::bold)));
     emptyState.setJustificationType(juce::Justification::centred);
     emptyState.setColour(juce::Label::textColourId, juce::Colour(0xffe3edf2));
     safetyNote.setText("Models will be listed only after source, licence, voice rights, SHA-256 and compatibility checks. Downloads are not available in this prototype.", juce::dontSendNotification);
@@ -71,7 +71,7 @@ void VoiceStudioAudioProcessorEditor::paint(juce::Graphics& g)
     g.setColour(juce::Colour(0xff1c2935));
     g.fillRoundedRectangle(getLocalBounds().toFloat().reduced(12.0f), 14.0f);
     g.setColour(juce::Colour(0xff75c7d5));
-    g.setFont(juce::Font(27.0f, juce::Font::bold));
+    g.setFont(juce::Font(juce::FontOptions(27.0f, juce::Font::bold)));
     g.drawText("VOICE STUDIO", 28, 14, 400, 38, juce::Justification::centredLeft);
     g.setColour(juce::Colour(0xffb6c4cf));
     g.setFont(13.0f);
