@@ -24,7 +24,7 @@ struct VerifiedModelFiles
 
 inline bool hasNoReparsePathComponents(const std::wstring& path, bool finalIsDirectory) noexcept
 {
-    if (path.size() < 3 || path[1] != L':' || path[2] != L'\\\\')
+    if (path.size() < 3 || path[1] != L':' || path[2] != L'\\')
         return false;
 
     auto checkObject = [](const std::wstring& objectPath, bool directory) noexcept
@@ -57,7 +57,7 @@ inline bool hasNoReparsePathComponents(const std::wstring& path, bool finalIsDir
     std::size_t componentStart = 3;
     while (componentStart < path.size())
     {
-        const auto separator = path.find(L'\\\\', componentStart);
+        const auto separator = path.find(L'\\', componentStart);
         const bool final = separator == std::wstring::npos;
         const auto componentEnd = final ? path.size() : separator;
         try { prefix.assign(path.data(), componentEnd); }
