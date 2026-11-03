@@ -16,6 +16,12 @@ inline constexpr std::uint32_t kAudioBlockSlotCount = 8;
 inline constexpr std::uint32_t kAudioBlockMaxFrames = 2880; // 60 ms at 48 kHz
 inline constexpr std::uint32_t kAudioBlockMaxChannels = 2;
 inline constexpr std::uint32_t kAudioBlockFloat32 = 1;
+// Fixed directional partition: plugin -> Worker uses slots [0, 4),
+// Worker -> plugin uses slots [4, 8). Both sides remain lock-free.
+inline constexpr std::uint32_t kAudioBlockInputSlotBegin = 0;
+inline constexpr std::uint32_t kAudioBlockInputSlotCount = 4;
+inline constexpr std::uint32_t kAudioBlockOutputSlotBegin = 4;
+inline constexpr std::uint32_t kAudioBlockOutputSlotCount = 4;
 inline constexpr std::uint32_t kAudioBlockKnownFlags = 0;
 
 enum class AudioBlockSlotState : std::int32_t
