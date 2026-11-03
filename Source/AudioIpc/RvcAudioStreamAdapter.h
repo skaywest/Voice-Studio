@@ -16,6 +16,7 @@ class RvcAudioStreamAdapter final
 public:
     static constexpr std::uint32_t kBlockFrames = 2880;
     static constexpr std::uint32_t kQueueCapacity = 2;
+    static constexpr std::uint32_t kMaxHostCallbackFrames = 8192;
 
     struct InputBlock
     {
@@ -41,7 +42,7 @@ public:
                        std::uint32_t frames, std::uint32_t channels,
                        std::uint64_t generation) noexcept
     {
-        if (left == nullptr || frames == 0 || generation == 0 ||
+        if (left == nullptr || frames == 0 || frames > kMaxHostCallbackFrames || generation == 0 ||
             (channels != 1 && channels != 2) || (channels == 2 && right == nullptr))
             return false;
 
@@ -57,7 +58,7 @@ public:
             if (!isFinite(sample))
             {
                 inputFrames = 0;
-                ++invalidInputBlocks;
+                invalidInputBlocks.fetch_add(1, std::memory_order_relaxed);
                 return false;
             }
 
@@ -65,7 +66,7 @@ public:
             if (inputFrames == kBlockFrames)
             {
                 if (!enqueueInput(inputAccumulator.data(), nextSequence, inputGeneration))
-                    ++droppedInputBlocks;
+                    droppedInputBlocks.fetch_add(1, std::memory_order_relaxed);
                 ++nextSequence;
                 inputFrames = 0;
             }
@@ -101,7 +102,7 @@ public:
         const auto read = outputRead.load(std::memory_order_acquire);
         if (write - read >= kQueueCapacity)
         {
-            ++droppedOutputBlocks;
+            droppedOutputBlocks.fetch_add(1, std::memory_order_relaxed);
             return false;
         }
 
@@ -131,6 +132,18 @@ public:
 
         while (result.frames < frames)
         {
+            if (outputBlockActive && activeOutputGeneration != generation)
+            {
+                const auto staleRead = outputRead.load(std::memory_order_relaxed);
+                outputRead.store(staleRead + 1, std::memory_order_release);
+                outputBlockActive = false;
+                outputOffset = 0;
+                activeOutputSequence = 0;
+                activeOutputGeneration = 0;
+                activeOutputGeneration = 0;
+                discardedStaleOutputBlocks.fetch_add(1, std::memory_order_relaxed);
+            }
+
             if (!outputBlockActive)
             {
                 const auto read = outputRead.load(std::memory_order_relaxed);
@@ -142,13 +155,14 @@ public:
                 if (candidate.generation != generation)
                 {
                     outputRead.store(read + 1, std::memory_order_release);
-                    ++discardedStaleOutputBlocks;
+                    discardedStaleOutputBlocks.fetch_add(1, std::memory_order_relaxed);
                     continue;
                 }
 
                 outputBlockActive = true;
                 outputOffset = 0;
                 activeOutputSequence = candidate.sequence;
+                activeOutputGeneration = candidate.generation;
             }
 
             const auto read = outputRead.load(std::memory_order_relaxed);
@@ -194,7 +208,8 @@ public:
 
     static constexpr bool atomicsAreAlwaysLockFree() noexcept
     {
-        return std::atomic<std::uint32_t>::is_always_lock_free;
+        return std::atomic<std::uint32_t>::is_always_lock_free &&
+               std::atomic<std::uint64_t>::is_always_lock_free;
     }
 
 private:
@@ -238,11 +253,12 @@ private:
     std::uint64_t inputGeneration = 0;
     std::uint64_t nextSequence = 1;
     std::uint64_t activeOutputSequence = 0;
+    std::uint64_t activeOutputGeneration = 0;
     bool outputBlockActive = false;
-    std::uint64_t droppedInputBlocks = 0;
-    std::uint64_t invalidInputBlocks = 0;
-    std::uint64_t droppedOutputBlocks = 0;
-    std::uint64_t discardedStaleOutputBlocks = 0;
+    std::atomic<std::uint64_t> droppedInputBlocks{0};
+    std::atomic<std::uint64_t> invalidInputBlocks{0};
+    std::atomic<std::uint64_t> droppedOutputBlocks{0};
+    std::atomic<std::uint64_t> discardedStaleOutputBlocks{0};
 };
 
 static_assert(RvcAudioStreamAdapter::atomicsAreAlwaysLockFree(),

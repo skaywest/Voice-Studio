@@ -92,6 +92,24 @@ int main()
     CHECK(fresh.frames == 128 && fresh.sequence == 13);
     CHECK(output.discardedStaleOutputBlockCount() == 1);
 
+
+    // Switching generation while an output block is only partially consumed
+    // must discard its remainder instead of leaking old voice audio.
+    RvcAudioStreamAdapter midBlockReset;
+    CHECK(midBlockReset.publishConvertedBlock(converted.data(), block, 21, 10));
+    std::vector<float> partial(256), afterReset(256);
+    auto oldPart = midBlockReset.pullConvertedOutput(partial.data(), 256, 10);
+    CHECK(oldPart.frames == 256 && oldPart.sequence == 21);
+    CHECK(midBlockReset.publishConvertedBlock(converted.data(), block, 22, 11));
+    auto newPart = midBlockReset.pullConvertedOutput(afterReset.data(), 256, 11);
+    CHECK(newPart.frames == 256 && newPart.sequence == 22);
+    CHECK(midBlockReset.discardedStaleOutputBlockCount() == 1);
+
+    // Oversized host callbacks are rejected to keep audio-thread work bounded.
+    CHECK(!midBlockReset.pushHostInput(full.data(), nullptr,
+                                       RvcAudioStreamAdapter::kMaxHostCallbackFrames + 1,
+                                       1, 11));
+
     // Output queue capacity is bounded and rejects malformed lengths.
     RvcAudioStreamAdapter outputOverflow;
     CHECK(!outputOverflow.publishConvertedBlock(converted.data(), block - 1, 1, 1));
