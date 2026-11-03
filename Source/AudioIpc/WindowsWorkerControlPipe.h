@@ -46,8 +46,8 @@ public:
             PIPE_TYPE_MESSAGE | PIPE_READMODE_MESSAGE | PIPE_WAIT |
                 PIPE_REJECT_REMOTE_CLIENTS,
             1,
-            static_cast<DWORD>(sizeof(WorkerStatusMessage)),
-            static_cast<DWORD>(sizeof(WorkerCommandMessage)),
+            4096,
+            4096,
             0,
             &securityAttributes);
         LocalFree(securityDescriptor);

@@ -178,17 +178,18 @@ int wmain(int argc, wchar_t** argv)
     if (!pipe.sendCommand(stop, 1000))
     {
         worker.shutdown();
-        return fail(13);
+        return fail(131);
     }
 
-    // The Worker may already have queued a periodic READY heartbeat carrying
-    // requestId 1. Drain those older statuses and wait for the STOP ack (2).
+    // Heartbeats may be queued before the STOP acknowledgement. Keep reading
+    // valid status messages until the matching request arrives or the deadline
+    // expires; do not assume a fixed number of heartbeat messages.
     bool receivedStopAck = false;
-    for (int attempt = 0; attempt < 6 && !receivedStopAck; ++attempt)
+    const ULONGLONG stopDeadline = GetTickCount64() + 5000;
+    while (!receivedStopAck && GetTickCount64() < stopDeadline)
     {
         WorkerStatusMessage status{};
-        if (!pipe.receiveStatus(status, 1000) ||
-            status.generation != generation ||
+        if (!pipe.receiveStatus(status, 500) || status.generation != generation ||
             status.requestId > 2)
             break;
 
@@ -204,7 +205,7 @@ int wmain(int argc, wchar_t** argv)
         stopped.result != static_cast<std::uint32_t>(WorkerResult::ok))
     {
         worker.shutdown();
-        return fail(13);
+        return fail(132);
     }
 
     if (!worker.terminate() || !worker.hasExited())
