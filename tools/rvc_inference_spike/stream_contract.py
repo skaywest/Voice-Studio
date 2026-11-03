@@ -1,0 +1,128 @@
+"""Fixed-block contract between Voice Studio IPC and upstream RVC realtime.
+
+The current native transport is mono float32, 48 kHz, 2880 frames (60 ms).
+The upstream RVCStreamEngine accepts a configurable block_ms and computes
+block_frame on 10 ms boundaries. This module builds that configuration and
+checks the live engine/result at the Python Worker boundary.
+"""
+from __future__ import annotations
+
+import math
+from pathlib import Path
+from typing import Any, Iterable
+
+HOST_SAMPLE_RATE = 48_000
+HOST_BLOCK_FRAMES = 2_880
+HOST_CHANNELS = 1
+HOST_BLOCK_MS = 60.0
+RVC_CROSSFADE_MS = 40.0
+RVC_EXTRA_MS = 2_000.0
+
+
+class StreamContractError(RuntimeError):
+    """The selected RVC engine cannot honor the native audio-block ABI."""
+
+
+def expected_rvc_block_frames(sample_rate: int, block_ms: float) -> int:
+    if isinstance(sample_rate, bool) or not isinstance(sample_rate, int) or sample_rate <= 0:
+        raise ValueError("sample_rate must be a positive integer")
+    if isinstance(block_ms, bool) or not isinstance(block_ms, (int, float)):
+        raise ValueError("block_ms must be a finite positive number")
+    if not math.isfinite(float(block_ms)) or block_ms <= 0:
+        raise ValueError("block_ms must be a finite positive number")
+    # Mirrors RVCStreamEngine.__init__: zc = max(1, sr // 100), then round
+    # the requested block duration to an integer multiple of zc.
+    zc = max(1, sample_rate // 100)
+    return int(round(float(block_ms) / 1000.0 * sample_rate / zc) * zc)
+
+
+def build_engine_config(
+    rvc_root: str | Path,
+    model_path: str | Path,
+    index_path: str | Path | None = None,
+) -> dict[str, Any]:
+    """Create explicit RVC config matching the existing mono 48 kHz IPC ABI."""
+    root = Path(rvc_root).expanduser().resolve()
+    model = Path(model_path).expanduser().resolve()
+    if not root.is_dir():
+        raise ValueError("rvc_root must be an existing directory")
+    if not model.is_file() or model.suffix.lower() != ".pth":
+        raise ValueError("model_path must be an existing .pth file")
+
+    config: dict[str, Any] = {
+        "rvc_root": str(root),
+        "model_path": str(model),
+        "index_path": "",
+        "sample_rate": HOST_SAMPLE_RATE,
+        "block_ms": HOST_BLOCK_MS,
+        "crossfade_ms": RVC_CROSSFADE_MS,
+        "extra_ms": RVC_EXTRA_MS,
+    }
+    if index_path is not None:
+        index = Path(index_path).expanduser().resolve()
+        if not index.is_file() or index.suffix.lower() != ".index":
+            raise ValueError("index_path must be an existing .index file")
+        config["index_path"] = str(index)
+
+    frames = expected_rvc_block_frames(config["sample_rate"], config["block_ms"])
+    if frames != HOST_BLOCK_FRAMES:
+        raise StreamContractError(
+            f"configured RVC block is {frames} frames; host requires {HOST_BLOCK_FRAMES}"
+        )
+    return config
+
+
+class RvcRealtimeAdapter:
+    """Validate the stateful upstream engine at the non-real-time Worker edge."""
+
+    def __init__(self, engine: Any):
+        self.engine = engine
+        sample_rate = getattr(engine, "sample_rate", None)
+        block_frame = getattr(engine, "block_frame", None)
+        if sample_rate != HOST_SAMPLE_RATE:
+            raise StreamContractError(
+                f"RVC sample rate {sample_rate!r}; host requires {HOST_SAMPLE_RATE}"
+            )
+        if block_frame != HOST_BLOCK_FRAMES:
+            raise StreamContractError(
+                f"RVC block size {block_frame!r}; host requires {HOST_BLOCK_FRAMES}"
+            )
+
+    def prewarm(self) -> None:
+        warm = getattr(self.engine, "prewarm", None)
+        if not callable(warm):
+            raise StreamContractError("RVC engine has no callable prewarm()")
+        warm()
+
+    def process(
+        self,
+        audio: Iterable[float],
+        pitch: float,
+        formant: float,
+        index_rate: float,
+        rms_mix: float,
+        threshold: float,
+        f0_method: int,
+    ):
+        if len(audio) != HOST_BLOCK_FRAMES:  # type: ignore[arg-type]
+            raise StreamContractError(
+                f"input block has {len(audio)} frames; expected {HOST_BLOCK_FRAMES}"  # type: ignore[arg-type]
+            )
+        output = self.engine.process(
+            audio, pitch, formant, index_rate, rms_mix, threshold, f0_method
+        )
+        if output is None or len(output) != HOST_BLOCK_FRAMES:
+            actual = None if output is None else len(output)
+            raise StreamContractError(
+                f"RVC output has {actual} frames; expected {HOST_BLOCK_FRAMES}"
+            )
+        for index, sample in enumerate(output):
+            try:
+                finite = math.isfinite(float(sample))
+            except (TypeError, ValueError, OverflowError):
+                finite = False
+            if not finite:
+                raise StreamContractError(
+                    f"RVC output contains a non-finite sample at index {index}"
+                )
+        return output
