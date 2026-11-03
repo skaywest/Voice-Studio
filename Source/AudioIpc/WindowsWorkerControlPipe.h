@@ -10,6 +10,7 @@
 #include <sddl.h>
 
 #include "WorkerControlAbi.h"
+#include "WorkerModelConfigAbi.h"
 
 #include <cstdint>
 #include <string>
@@ -46,8 +47,8 @@ public:
             PIPE_TYPE_MESSAGE | PIPE_READMODE_MESSAGE | PIPE_WAIT |
                 PIPE_REJECT_REMOTE_CLIENTS,
             1,
-            4096,
-            4096,
+            16384,
+            16384,
             0,
             &securityAttributes);
         LocalFree(securityDescriptor);
@@ -134,6 +135,24 @@ public:
     {
         return connected && hasValidWorkerCommand(message) &&
                writeMessage(&message, static_cast<DWORD>(sizeof(message)), timeoutMs);
+    }
+
+    // Model configuration is a bounded, fixed-size message. It is sent only
+    // from the control thread; the real-time audio callback never touches IPC.
+    bool sendModelConfig(const WorkerModelConfigMessage& message, DWORD timeoutMs = 3000) noexcept
+    {
+        return connected && hasValidWorkerModelConfig(message) &&
+               writeMessage(&message, static_cast<DWORD>(sizeof(message)), timeoutMs);
+    }
+
+    bool receiveModelConfig(WorkerModelConfigMessage& output, DWORD timeoutMs = 3000) noexcept
+    {
+        WorkerModelConfigMessage message{};
+        if (!connected || !readExactMessage(&message, static_cast<DWORD>(sizeof(message)), timeoutMs) ||
+            !hasValidWorkerModelConfig(message))
+            return false;
+        output = message;
+        return true;
     }
 
     bool receiveStatus(WorkerStatusMessage& output, DWORD timeoutMs = 3000) noexcept

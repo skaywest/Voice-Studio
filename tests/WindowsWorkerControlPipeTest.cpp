@@ -20,6 +20,33 @@ static WorkerCommandMessage makeCommand()
     return m;
 }
 
+static void setModelPath(char16_t* destination, std::uint16_t& length, const char16_t* source)
+{
+    std::size_t count = 0;
+    while (source[count] != 0) ++count;
+    for (std::size_t i = 0; i <= count; ++i) destination[i] = source[i];
+    length = static_cast<std::uint16_t>(count);
+}
+
+static WorkerModelConfigMessage makeModelConfig()
+{
+    WorkerModelConfigMessage message{};
+    message.size = static_cast<std::uint16_t>(sizeof(message));
+    message.generation = 17;
+    message.requestId = 30;
+    message.flags = kWorkerModelConfigFlagSourceTrusted |
+                    kWorkerModelConfigFlagVoiceRightsConfirmed;
+    setModelPath(message.rootPath, message.rootPathLength, u"C:\\RVC");
+    setModelPath(message.entrypointPath, message.entrypointPathLength,
+                 u"C:\\RVC\\RVCRealtimeVST\\worker\\rvc_worker.py");
+    setModelPath(message.modelPath, message.modelPathLength, u"D:\\Voices\\voice.pth");
+    message.entrypointSizeBytes = 100;
+    message.modelSizeBytes = 200;
+    message.entrypointSha256[0] = 1;
+    message.modelSha256[0] = 2;
+    return message;
+}
+
 static WorkerStatusMessage makeStatus(const WorkerCommandMessage& command)
 {
     WorkerStatusMessage m{};
@@ -136,6 +163,25 @@ int wmain(int argc, wchar_t** argv)
         WorkerStatusMessage response{};
         inProcessOk = client.receiveStatus(response) &&
                       response.requestId == command.requestId;
+        if (!inProcessOk)
+            return 6;
+
+        const auto modelConfig = makeModelConfig();
+        if (!hasValidWorkerModelConfig(modelConfig) ||
+            !client.sendModelConfig(modelConfig, 3000))
+            return 7;
+        WorkerModelConfigMessage receivedConfig{};
+        if (!server.receiveModelConfig(receivedConfig, 3000) ||
+            receivedConfig.generation != modelConfig.generation ||
+            receivedConfig.requestId != modelConfig.requestId ||
+            receivedConfig.modelPathLength != modelConfig.modelPathLength ||
+            !hasValidWorkerModelConfig(receivedConfig))
+            return 8;
+
+        auto invalidConfig = modelConfig;
+        invalidConfig.flags &= ~kWorkerModelConfigFlagVoiceRightsConfirmed;
+        if (client.sendModelConfig(invalidConfig, 100))
+            return 9;
     }
     server.close();
     if (!inProcessOk)
