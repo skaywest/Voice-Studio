@@ -88,6 +88,9 @@ jobs:
       - name: Build realtime audio mapping lifetime test
         run: cmake --build build --config Release --target VoiceStudioAudioBlockRealtimeAccessTest
 
+      - name: Build realtime audio transport bridge test
+        run: cmake --build build --config Release --target VoiceStudioAudioBlockRealtimeBridgeTest
+
       - name: Build atomic audio block slot synchronization tests
         run: cmake --build build --config Release --target VoiceStudioAudioBlockSlotSyncTest
 
