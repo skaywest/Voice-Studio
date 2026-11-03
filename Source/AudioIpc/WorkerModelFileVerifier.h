@@ -95,6 +95,16 @@ inline bool openVerifiedFile(const char16_t* path, std::uint16_t pathLength,
         FILE_FLAG_OPEN_REPARSE_POINT | FILE_FLAG_SEQUENTIAL_SCAN, nullptr);
     if (file == INVALID_HANDLE_VALUE) return false;
 
+    // Deny writes through already-open compatible handles as well as new opens.
+    // Share flags alone do not stop a writer that was opened before this verifier.
+    OVERLAPPED fileLock{};
+    if (!LockFileEx(file, LOCKFILE_EXCLUSIVE_LOCK | LOCKFILE_FAIL_IMMEDIATELY,
+                    0, 0xffffffffu, 0xffffffffu, &fileLock))
+    {
+        CloseHandle(file);
+        return false;
+    }
+
     FILE_ATTRIBUTE_TAG_INFO info{};
     if (!GetFileInformationByHandleEx(file, FileAttributeTagInfo, &info, sizeof(info)) ||
         (info.FileAttributes & (FILE_ATTRIBUTE_REPARSE_POINT | FILE_ATTRIBUTE_DIRECTORY)) != 0)
