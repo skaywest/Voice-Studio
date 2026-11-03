@@ -121,3 +121,44 @@ Consequences for this project:
 The repository's current Worker remains a protocol/audio echo Worker:
 `start` is unsupported. No RVC code is executed, no checkpoint is
 deserialized, and no GPU inference is claimed by this audit.
+
+## Staging design decision (2026-11-04)
+
+Decision: use a Worker-owned staging tree for the inspected path-oriented RVC backend. Do not pass originally selected checkout/model paths to Python, PyTorch, FAISS, Transformers, or the RVC adapter.
+
+### Staging transaction
+
+1. The Worker accepts a versioned, bounded manifest. Each entry has a normalized relative path, exact byte length, SHA-256, and a role (Python source, checkpoint, FAISS index, HuBERT asset, F0 asset, or runtime support file). Absolute paths, drive prefixes, UNC paths, alternate data stream syntax, dot segments, duplicate/case-colliding paths, and reparse points are rejected.
+2. The Worker creates a fresh unpredictable staging directory beneath an application-owned data root. It must not reuse an existing directory. The directory and files are created exclusively (no overwrite); inherited permissive ACLs are replaced before content is written. The DACL grants access only to the Worker identity and required operating-system principals.
+3. Source files are opened by the existing verifier, then copied from those verified handles—not reopened by caller-supplied names. The copy loop computes SHA-256 while writing. The staged file is flushed, closed, reopened read-only, and independently hashed before acceptance. Size and digest must match at both source-verification and staged-verification boundaries.
+4. The staged tree is immutable for the backend lifetime. No write/delete handles are retained or shared; files are not writable by the plugin. The Worker passes only canonical staged paths to path-based RVC APIs. Delayed index activation and lazy F0 loading must resolve only within this same staged tree.
+5. Backend shutdown first stops new audio work, then waits for inference and lazy asset readers to finish, unloads FAISS/PyTorch/model objects, and only then removes the staging tree. A failed stage/load removes the partial tree and leaves AI unavailable with DSP/dry fallback.
+6. The Worker records the staged manifest digest and rejects any file whose path, size, or digest is not in the accepted manifest. No network fetch, package installation, or model download is part of this transaction.
+
+### Manifest coverage
+
+The manifest must cover the complete executable/runtime closure, not only the three current ABI paths:
+
+- the exact RVC source revision and every imported Python source/module file;
+- the realtime entrypoint and adapter source;
+- the .pth checkpoint and optional .index file;
+- the complete selected HuBERT directory and selected F0 assets (including RMVPE when enabled);
+- configuration JSON and any other data files opened at runtime;
+- the Python executable, standard-library/runtime files, and native extension modules required by the pinned package set.
+
+The initial implementation may deliberately support a smaller, explicit feature set (for example one pinned F0 method and no optional index). It must fail closed when a selected feature requires an asset absent from the manifest. It must not silently fetch missing files or fall back to an unverified location.
+
+### Threat model and limits
+
+A restrictive ACL and exclusive creation prevent ordinary plugin/user-level replacement when the Worker runs under a distinct, appropriately restricted identity. If the Worker and an attacker run with the same Windows identity, that attacker may still have equivalent access to the staging directory; same-user ACLs alone are not a security boundary against a malicious process with the same token. The product must either document that limitation or run the Worker under a restricted identity with a separately protected data root. Administrators and kernel-level attackers are outside this file-integrity boundary.
+
+The source checkout and Python packages are executable code. A user trust confirmation is required for an externally selected RVC source/runtime, but confirmation does not authenticate it. Production should prefer a pinned, application-supplied offline runtime and source bundle with a verified release manifest. Until such a bundle exists, external runtime support remains explicit opt-in and must not be described as a fully trusted/sandboxed runtime.
+
+### Implementation gates
+
+- Extend the native manifest ABI with a bounded list of relative file entries and a manifest version; keep current fixed-size message limits explicit.
+- Implement safe directory creation and ACL verification before writing any staged bytes.
+- Implement handle-based source copying, exclusive destination creation, flush/reopen/re-hash, and complete cleanup on every failure path.
+- Add Windows tests for traversal, duplicate paths, case collisions, reparse points in every path component, pre-existing destination files, ACL mismatch, source mutation during copy, staged mutation attempts, and cleanup after failed copy/load.
+- Add adapter tests that observe every file open and prove that startup, late index activation, and each enabled F0 method use staged paths only.
+- Do not enable start until these tests pass and a real model-backed CUDA inference/latency test is run. CI without PyTorch/CUDA can validate the staging protocol but cannot claim inference readiness.
