@@ -14,7 +14,7 @@ static WorkerModelConfigMessage validConfig() {
     m.flags = kWorkerModelConfigFlagSourceTrusted | kWorkerModelConfigFlagVoiceRightsConfirmed;
     setPath(m.rootPath, m.rootPathLength, u"C:\\RVC");
     setPath(m.entrypointPath, m.entrypointPathLength, u"C:\\RVC\\RVCRealtimeVST\\worker\\rvc_worker.py");
-    setPath(m.modelPath, m.modelPathLength, u"D:\\Voices\\voice.pth");
+    setPath(m.modelPath, m.modelPathLength, u"C:\\RVC\\models\\voice.pth");
     m.entrypointSizeBytes = 100; m.modelSizeBytes = 200;
     m.entrypointSha256[0] = 1; m.modelSha256[0] = 2;
     return m;
@@ -35,12 +35,14 @@ int main() {
     x = m; setPath(x.modelPath, x.modelPathLength, u"D:\\\\Voices\\voice.pth"); assert(!hasValidWorkerModelConfig(x));
     x = m; x.modelSizeBytes = kWorkerModelMaxDataFileBytes + 1; assert(!hasValidWorkerModelConfig(x));
     x = m; setPath(x.modelPath, x.modelPathLength, u"\\\\server\\share\\voice.pth"); assert(!hasValidWorkerModelConfig(x));
-    x = m; setPath(x.modelPath, x.modelPathLength, u"D:\\Voices\\voice.exe"); assert(!hasValidWorkerModelConfig(x));
+    x = m; setPath(x.modelPath, x.modelPathLength, u"C:\\RVC\\models\\voice.exe"); assert(!hasValidWorkerModelConfig(x));
+    x = m; setPath(x.modelPath, x.modelPathLength, u"D:\\Voices\\voice.pth"); assert(!hasValidWorkerModelConfig(x));
+    x = m; setPath(x.modelPath, x.modelPathLength, u"C:\\RVC-evil\\voice.pth"); assert(!hasValidWorkerModelConfig(x));
     x = m; x.indexPathLength = 1; assert(!hasValidWorkerModelConfig(x));
     x = m; x.flags |= kWorkerModelConfigFlagHasIndex; assert(!hasValidWorkerModelConfig(x));
     x = m; x.flags |= 0x80000000u; assert(!hasValidWorkerModelConfig(x));
     auto withIndex = m; withIndex.flags |= kWorkerModelConfigFlagHasIndex;
-    setPath(withIndex.indexPath, withIndex.indexPathLength, u"D:\\Voices\\voice.index");
+    setPath(withIndex.indexPath, withIndex.indexPathLength, u"C:\\RVC\\models\\voice.index");
     withIndex.indexSizeBytes = 32; withIndex.indexSha256[0] = 3;
     assert(hasValidWorkerModelConfig(withIndex));
     return 0;

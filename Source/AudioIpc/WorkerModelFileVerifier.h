@@ -22,6 +22,49 @@ struct VerifiedModelFiles
     bool index = false;
 };
 
+inline bool hasNoReparsePathComponents(const std::wstring& path, bool finalIsDirectory) noexcept
+{
+    if (path.size() < 3 || path[1] != L':' || path[2] != L'\\')
+        return false;
+
+    // Check the drive root, each directory component, and the final object.
+    // FILE_FLAG_OPEN_REPARSE_POINT makes the check inspect the link itself
+    // instead of silently following a junction/symlink to an external target.
+    std::size_t componentEnd = 3;
+    while (componentEnd <= path.size())
+    {
+        const bool final = componentEnd == path.size();
+        if (!final && path[componentEnd] != L'\\')
+        {
+            ++componentEnd;
+            continue;
+        }
+
+        const std::wstring component = path.substr(0, componentEnd);
+        const DWORD flags = FILE_FLAG_OPEN_REPARSE_POINT |
+                            ((final && !finalIsDirectory) ? 0 : FILE_FLAG_BACKUP_SEMANTICS);
+        HANDLE handle = CreateFileW(component.c_str(), FILE_READ_ATTRIBUTES,
+            FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr,
+            OPEN_EXISTING, flags, nullptr);
+        if (handle == INVALID_HANDLE_VALUE)
+            return false;
+
+        FILE_ATTRIBUTE_TAG_INFO info{};
+        const bool queried = GetFileInformationByHandleEx(handle, FileAttributeTagInfo,
+            &info, sizeof(info)) != FALSE;
+        CloseHandle(handle);
+        if (!queried || (info.FileAttributes & FILE_ATTRIBUTE_REPARSE_POINT) != 0)
+            return false;
+        if (!final && (info.FileAttributes & FILE_ATTRIBUTE_DIRECTORY) == 0)
+            return false;
+
+        if (final)
+            break;
+        ++componentEnd;
+    }
+    return true;
+}
+
 inline bool verifyModelFile(const char16_t* path, std::uint16_t pathLength,
                             std::uint64_t expectedSize,
                             const std::uint8_t (&expectedHash)[32]) noexcept
@@ -33,11 +76,24 @@ inline bool verifyModelFile(const char16_t* path, std::uint16_t pathLength,
     std::wstring filePath;
     try { filePath.assign(reinterpret_cast<const wchar_t*>(path), pathLength); }
     catch (...) { return false; }
+    if (!hasNoReparsePathComponents(filePath, false))
+        return false;
+
+    // Deny write/delete sharing while hashing so the bytes cannot be replaced
+    // through another handle during this verification pass.
     HANDLE file = CreateFileW(filePath.c_str(), GENERIC_READ,
         FILE_SHARE_READ, nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL |
-        FILE_FLAG_SEQUENTIAL_SCAN, nullptr);
+        FILE_FLAG_OPEN_REPARSE_POINT | FILE_FLAG_SEQUENTIAL_SCAN, nullptr);
     if (file == INVALID_HANDLE_VALUE)
         return false;
+
+    FILE_ATTRIBUTE_TAG_INFO fileInfo{};
+    if (!GetFileInformationByHandleEx(file, FileAttributeTagInfo, &fileInfo, sizeof(fileInfo)) ||
+        (fileInfo.FileAttributes & (FILE_ATTRIBUTE_REPARSE_POINT | FILE_ATTRIBUTE_DIRECTORY)) != 0)
+    {
+        CloseHandle(file);
+        return false;
+    }
 
     bool ok = false;
     LARGE_INTEGER fileSize{};
@@ -97,6 +153,12 @@ cleanup:
 inline bool verifyWorkerModelConfigFiles(const WorkerModelConfigMessage& config) noexcept
 {
     if (!hasValidWorkerModelConfig(config))
+        return false;
+
+    std::wstring root;
+    try { root.assign(reinterpret_cast<const wchar_t*>(config.rootPath), config.rootPathLength); }
+    catch (...) { return false; }
+    if (!hasNoReparsePathComponents(root, true))
         return false;
 
     // Reopen each file by its explicit local path and verify both exact size

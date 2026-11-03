@@ -72,6 +72,14 @@ inline bool hasSafeLocalAbsoluteWindowsPath(const char16_t* path, std::uint16_t 
         (finalLength == 2 && path[finalStart] == u'.' && path[finalStart + 1] == u'.')) return false;
     return path[length - 1] != u'\\' && path[length] == 0;
 }
+inline bool isModelPathWithinRoot(const char16_t* root, std::uint16_t rootLength,
+                                  const char16_t* path, std::uint16_t pathLength) noexcept {
+    if (root == nullptr || path == nullptr || rootLength < 3 ||
+        pathLength <= rootLength || root[rootLength - 1] == u'\\') return false;
+    for (std::size_t i = 0; i < rootLength; ++i)
+        if (modelConfigLower(root[i]) != modelConfigLower(path[i])) return false;
+    return path[rootLength] == u'\\';
+}
 inline bool hasExpectedRvcEntrypoint(const WorkerModelConfigMessage& m) noexcept {
     constexpr char16_t suffix[] = u"\\RVCRealtimeVST\\worker\\rvc_worker.py";
     constexpr std::size_t n = sizeof(suffix) / sizeof(suffix[0]) - 1;
@@ -111,10 +119,13 @@ inline bool hasValidWorkerModelConfig(const WorkerModelConfigMessage& m) noexcep
         !hasSafeLocalAbsoluteWindowsPath(m.entrypointPath, m.entrypointPathLength) ||
         !hasSafeLocalAbsoluteWindowsPath(m.modelPath, m.modelPathLength) ||
         !hasExpectedRvcEntrypoint(m) ||
+        !isModelPathWithinRoot(m.rootPath, m.rootPathLength, m.entrypointPath, m.entrypointPathLength) ||
+        !isModelPathWithinRoot(m.rootPath, m.rootPathLength, m.modelPath, m.modelPathLength) ||
         !hasModelConfigExtension(m.modelPath, m.modelPathLength, u".pth", 4)) return false;
     const bool hasIndex = (m.flags & kWorkerModelConfigFlagHasIndex) != 0;
     if (hasIndex) {
         if (!hasSafeLocalAbsoluteWindowsPath(m.indexPath, m.indexPathLength) ||
+            !isModelPathWithinRoot(m.rootPath, m.rootPathLength, m.indexPath, m.indexPathLength) ||
             !hasModelConfigExtension(m.indexPath, m.indexPathLength, u".index", 6) ||
             m.indexSizeBytes == 0 || m.indexSizeBytes > kWorkerModelMaxDataFileBytes ||
             !modelConfigHashPresent(m.indexSha256)) return false;

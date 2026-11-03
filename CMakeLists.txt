@@ -142,7 +142,7 @@ if(VOICE_STUDIO_BUILD_SMOKE_TESTS)
         add_executable(VoiceStudioWindowsWorkerControllerTest tests/WindowsWorkerControllerTest.cpp)
         target_include_directories(VoiceStudioWindowsWorkerControllerTest PRIVATE Source)
         target_compile_features(VoiceStudioWindowsWorkerControllerTest PRIVATE cxx_std_17)
-        target_link_libraries(VoiceStudioWindowsWorkerControllerTest PRIVATE advapi32)
+        target_link_libraries(VoiceStudioWindowsWorkerControllerTest PRIVATE advapi32 bcrypt)
         add_test(NAME VoiceStudioWindowsWorkerControllerTest
                  COMMAND VoiceStudioWindowsWorkerControllerTest $<TARGET_FILE:VoiceStudioWorker>)
         set_tests_properties(VoiceStudioWindowsWorkerControllerTest PROPERTIES TIMEOUT 20)
