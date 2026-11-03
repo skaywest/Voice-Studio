@@ -115,9 +115,12 @@ public:
         const DWORD wait = WaitForSingleObject(operation.hEvent, timeoutMs);
         if (wait != WAIT_OBJECT_0)
         {
-            cancelAndDrain(operation);
+            // The client may connect at the same instant as our timeout.
+            // If cancellation loses that race, preserve the completed result.
+            DWORD ignored = 0;
+            connected = cancelAndDrain(operation, ignored);
             CloseHandle(operation.hEvent);
-            return false;
+            return connected;
         }
 
         DWORD ignored = 0;
@@ -179,17 +182,21 @@ public:
     bool isConnected() const noexcept { return connected; }
 
 private:
-    void cancelAndDrain(OVERLAPPED& operation) noexcept
+    bool cancelAndDrain(OVERLAPPED& operation, DWORD& transferred) noexcept
     {
         // The OVERLAPPED storage and event must remain alive until the kernel
         // has completed cancellation; otherwise late completion can corrupt memory.
+        // ERROR_NOT_FOUND means the operation may already have completed. In that
+        // race, GetOverlappedResult tells us whether useful data was actually read.
         if (!CancelIoEx(pipe, &operation) && GetLastError() != ERROR_NOT_FOUND)
         {
             // Still wait below: cancellation failure does not make the request safe to forget.
         }
         WaitForSingleObject(operation.hEvent, INFINITE);
-        DWORD ignored = 0;
-        GetOverlappedResult(pipe, &operation, &ignored, FALSE);
+        DWORD completedBytes = 0;
+        const BOOL completed = GetOverlappedResult(pipe, &operation, &completedBytes, FALSE);
+        transferred = completedBytes;
+        return completed != FALSE;
     }
 
     bool transfer(bool writing, const void* source, void* destination,
@@ -216,9 +223,13 @@ private:
             const DWORD wait = WaitForSingleObject(operation.hEvent, timeoutMs);
             if (wait != WAIT_OBJECT_0)
             {
-                cancelAndDrain(operation);
+                // A read/write can complete just as the timeout fires. Do not
+                // discard a successful completion merely because CancelIoEx
+                // raced with it; this is especially important for short Worker
+                // command-poll intervals on the receiving side.
+                const bool completedDuringTimeout = cancelAndDrain(operation, transferred);
                 CloseHandle(operation.hEvent);
-                return false;
+                return completedDuringTimeout;
             }
             completed = GetOverlappedResult(pipe, &operation, &transferred, FALSE);
         }
