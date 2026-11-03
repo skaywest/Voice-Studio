@@ -30,7 +30,9 @@ inline bool verifyModelFile(const char16_t* path, std::uint16_t pathLength,
         expectedSize == 0)
         return false;
 
-    std::wstring filePath(reinterpret_cast<const wchar_t*>(path), pathLength);
+    std::wstring filePath;
+    try { filePath.assign(reinterpret_cast<const wchar_t*>(path), pathLength); }
+    catch (...) { return false; }
     HANDLE file = CreateFileW(filePath.c_str(), GENERIC_READ,
         FILE_SHARE_READ, nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL |
         FILE_FLAG_SEQUENTIAL_SCAN, nullptr);
@@ -56,7 +58,8 @@ inline bool verifyModelFile(const char16_t* path, std::uint16_t pathLength,
                           reinterpret_cast<PUCHAR>(&objectBytes), sizeof(objectBytes),
                           &returned, 0) < 0 || returned != sizeof(objectBytes) || objectBytes == 0)
         goto cleanup;
-    hashObject.resize(objectBytes);
+    try { hashObject.resize(objectBytes); }
+    catch (...) { goto cleanup; }
     if (BCryptCreateHash(algorithm, &hash, hashObject.data(), objectBytes, nullptr, 0, 0) < 0)
         goto cleanup;
 
