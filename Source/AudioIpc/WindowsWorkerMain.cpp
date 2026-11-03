@@ -50,6 +50,50 @@ WorkerStatusMessage makeStatus(WorkerState state, WorkerResult result,
     return status;
 }
 
+// Transport-only echo path used to prove cross-process audio ownership and
+// payload visibility. This is deliberately not voice conversion or AI.
+void transferAvailableAudioBlocks(AudioBlockRegion& region) noexcept
+{
+    for (std::uint32_t inputIndex = kAudioBlockInputSlotBegin;
+         inputIndex < kAudioBlockInputSlotBegin + kAudioBlockInputSlotCount; ++inputIndex)
+    {
+        auto& input = region.slots[inputIndex];
+        if (!tryBeginAudioBlockRead(input))
+            continue;
+        if (!hasFiniteAudioBlockPayload(input))
+        {
+            finishAudioBlockRead(input);
+            continue;
+        }
+        AudioBlockSlot* output = nullptr;
+        for (std::uint32_t outputIndex = kAudioBlockOutputSlotBegin;
+             outputIndex < kAudioBlockOutputSlotBegin + kAudioBlockOutputSlotCount; ++outputIndex)
+        {
+            auto& candidate = region.slots[outputIndex];
+            if (tryBeginAudioBlockWrite(candidate))
+            {
+                output = &candidate;
+                break;
+            }
+        }
+        if (output != nullptr)
+        {
+            output->flags = input.flags;
+            output->sequence = input.sequence;
+            output->generation = input.generation;
+            output->deadlineMonotonicNs = input.deadlineMonotonicNs;
+            output->sampleRate = input.sampleRate;
+            output->channels = input.channels;
+            output->frames = input.frames;
+            output->payloadSamples = input.payloadSamples;
+            for (std::uint32_t sample = 0; sample < input.payloadSamples; ++sample)
+                output->samples[sample] = input.samples[sample];
+            publishAudioBlockWrite(*output);
+        }
+        finishAudioBlockRead(input);
+    }
+}
+
 int runWorker(const std::wstring& pipeName, const std::wstring& mappingName,
               std::uint64_t generation, std::uint64_t requestId) noexcept
 {
@@ -71,8 +115,9 @@ int runWorker(const std::wstring& pipeName, const std::wstring& mappingName,
     for (;;)
     {
         WorkerCommandMessage command{};
-        if (!pipe.receiveCommand(command, 250))
+        if (!pipe.receiveCommand(command, 10))
         {
+            transferAvailableAudioBlocks(*audioMapping.get());
             const auto now = monotonicNs();
             if (now - lastHeartbeatNs >= 500'000'000ull)
             {
