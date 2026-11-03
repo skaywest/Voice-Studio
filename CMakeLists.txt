@@ -161,7 +161,12 @@ if(VOICE_STUDIO_BUILD_SMOKE_TESTS)
         add_test(NAME VoiceStudioWindowsWorkerControlPipeTest COMMAND VoiceStudioWindowsWorkerControlPipeTest)
         set_tests_properties(VoiceStudioWindowsWorkerControlPipeTest PROPERTIES TIMEOUT 20)
 
-        add_executable(VoiceStudioAudioBlockSlotSyncTest tests/AudioBlockSlotSyncTest.cpp)
+        add_executable(VoiceStudioAudioBlockRealtimeAccessTest tests/AudioBlockRealtimeAccessTest.cpp)
+    target_include_directories(VoiceStudioAudioBlockRealtimeAccessTest PRIVATE Source)
+    target_compile_features(VoiceStudioAudioBlockRealtimeAccessTest PRIVATE cxx_std_17)
+    add_test(NAME VoiceStudioAudioBlockRealtimeAccessTest COMMAND VoiceStudioAudioBlockRealtimeAccessTest)
+
+    add_executable(VoiceStudioAudioBlockSlotSyncTest tests/AudioBlockSlotSyncTest.cpp)
         target_include_directories(VoiceStudioAudioBlockSlotSyncTest PRIVATE Source)
         target_compile_features(VoiceStudioAudioBlockSlotSyncTest PRIVATE cxx_std_17)
         add_test(NAME VoiceStudioAudioBlockSlotSyncTest COMMAND VoiceStudioAudioBlockSlotSyncTest)
