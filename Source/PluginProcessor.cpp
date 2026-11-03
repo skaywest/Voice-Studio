@@ -340,9 +340,12 @@ void VoiceStudioAudioProcessor::workerControlLoop() noexcept
 
         workerController.shutdown();
         workerUiRunning.store(false, std::memory_order_release);
-        const auto finalState = requestedStop || shouldExit || launched
+        const auto controllerState = workerController.currentState();
+        const auto finalState = requestedStop || shouldExit
             ? voice_studio::ipc::WorkerLifecycleState::disabled
-            : voice_studio::ipc::WorkerLifecycleState::faulted;
+            : controllerState == voice_studio::ipc::WorkerLifecycleState::faulted || !launched
+                ? voice_studio::ipc::WorkerLifecycleState::faulted
+                : voice_studio::ipc::WorkerLifecycleState::disabled;
         workerUiState.store(static_cast<int>(finalState), std::memory_order_release);
 
         if (shouldExit)

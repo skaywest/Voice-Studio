@@ -36,6 +36,12 @@ int main()
            "DSP is enabled by default");
     expect(!processor.isAiConversionAvailable(),
            "AI conversion is unavailable until a Worker confirms processing");
+#if defined(_WIN32)
+    expect(processor.workerStatusText() == "WORKER STOPPED",
+           "Worker UI snapshot starts in the stopped state");
+    expect(!processor.launchWorker(juce::File{}),
+           "invalid Worker path is rejected without queueing a launch");
+#endif
     expect(processor.parameters.getRawParameterValue("highPass")->load() > 0.5f,
            "high-pass is enabled by default");
     expect(processor.parameters.getRawParameterValue("presence")->load() > 0.5f,
