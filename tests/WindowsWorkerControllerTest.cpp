@@ -140,6 +140,27 @@ int wmain(int argc, wchar_t** argv)
     const bool safeFallback = receivedFailure && !controller.audioConversionAvailable() &&
                               !controller.audioRealtimeAccess().isAttached();
     controller.shutdown();
+    if (!safeFallback)
+    {
+        cleanup(root, entrypoint, model);
+        return 6;
+    }
+
+    // A syntactically valid manifest with a wrong digest must be rejected by
+    // the Worker itself, and the controller must fail closed.
+    auto tampered = config;
+    tampered.modelSha256[0] ^= 0xffu;
+    const std::wstring badPipeName = pipeName + L"-bad-hash";
+    WindowsWorkerController badController;
+    if (!badController.launch(executable, badPipeName, monotonicNs(), 5000))
+    {
+        cleanup(root, entrypoint, model);
+        return 7;
+    }
+    const bool rejected = !badController.configureModel(tampered, 5000) &&
+                          badController.currentState() == WorkerLifecycleState::faulted &&
+                          !badController.audioConversionAvailable();
+    badController.shutdown();
     cleanup(root, entrypoint, model);
-    return safeFallback ? 0 : 6;
+    return rejected ? 0 : 8;
 }
