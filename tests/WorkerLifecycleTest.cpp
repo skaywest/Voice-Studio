@@ -46,6 +46,7 @@ int main()
     assert(lifecycle.currentState() == WorkerLifecycleState::ready);
     assert(!lifecycle.isAudioConversionAvailable());
 
+    WorkerCommandMessage command{};
     assert(lifecycle.userConfigureModel() == WorkerLifecycleAction::sendConfigureModel);
     assert(makeWorkerCommand(WorkerLifecycleAction::sendConfigureModel, lifecycle, 5000, command));
     assert(command.command == static_cast<std::uint16_t>(WorkerCommand::configureModel));
@@ -54,7 +55,6 @@ int main()
     assert(!lifecycle.isAudioConversionAvailable());
 
     assert(lifecycle.userEnableAi() == WorkerLifecycleAction::sendStart);
-    WorkerCommandMessage command{};
     assert(makeWorkerCommand(WorkerLifecycleAction::sendStart, lifecycle, 5000, command));
     assert(hasValidWorkerCommand(command));
     assert(command.command == static_cast<std::uint16_t>(WorkerCommand::start));

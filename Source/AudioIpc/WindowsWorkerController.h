@@ -95,7 +95,12 @@ public:
     bool configureModel(WorkerModelConfigMessage config,
                         std::uint32_t timeoutMs = 30000) noexcept
     {
-        if (!active || !hasValidWorkerModelConfig(config))
+        if (!active)
+            return false;
+        config.generation = coordinator.currentGeneration();
+        config.requestId = 1; // Replaced with the next lifecycle request below.
+        config.size = static_cast<std::uint16_t>(sizeof(config));
+        if (!hasValidWorkerModelConfig(config))
             return false;
 
         const auto decision = coordinator.configureModel();
