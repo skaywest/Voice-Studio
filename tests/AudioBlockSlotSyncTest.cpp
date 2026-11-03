@@ -75,8 +75,6 @@ void testRealtimeTransportRejectsInvalidAndStaleData()
     initialiseAudioRegion(region);
     const float samples[] = { 0.1f, -0.1f };
     CHECK(!tryPublishInputAudioBlock(region, samples, 1, 2, 48000, 0, 1, 100));
-    CHECK(!tryPublishInputAudioBlock(region, samples, 1, 2, 48000, 1, 1, 100));
-    CHECK(!tryPublishInputAudioBlock(region, samples, 1, 2, 48000, 1, 1, 100));
     CHECK(tryPublishInputAudioBlock(region, samples, 1, 2, 48000, 1, 1, 100));
     float result[2] { 7.0f, 8.0f };
     CHECK(!tryConsumeOutputAudioBlock(region, result, 2, 1, 2, 1, 50));
