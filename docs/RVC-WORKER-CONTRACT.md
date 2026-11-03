@@ -36,6 +36,40 @@ A production audio-block ABI must carry, at minimum:
 
 The first benchmark matrix is 20/40/60 ms at 48 kHz (960/1920/2880 frames), mono and stereo. The host's actual block size may differ; the adapter must accumulate/split blocks without waiting in the callback and must keep its queue bounded. These are benchmark targets, not a promise of achievable latency.
 
+## RVC engine block adapter
+
+The reviewed upstream realtime worker accepts a mono waveform and requires each
+inference request to contain exactly its configured `block_frame` samples. Its
+input resampler, HuBERT/F0 context, output resampler and SOLA overlap are stateful
+across calls. The adapter must therefore preserve one ordered stream; it must
+not invoke inference independently on arbitrary host callback buffers.
+
+The first integration profile will use a 48 kHz host stream and a 60 ms RVC
+block (2,880 mono samples). This fits the current shared-memory ABI limit of
+2,880 frames. The worker configuration must explicitly set this block size;
+the upstream default of 130 ms does not fit the current ABI. Do not silently
+truncate or split one RVC inference request into unrelated model calls.
+
+The plugin-side realtime adapter must:
+
+- accumulate host callback samples into fixed 60 ms mono input blocks using
+  preallocated bounded storage;
+- downmix stereo input deterministically before publishing to the worker;
+- consume converted mono output in stream order and distribute it across host
+  callbacks, with a measured fixed latency budget;
+- duplicate the converted mono signal to stereo outputs when required;
+- drop an entire AI block on queue overrun or missed deadline, reset alignment
+  safely on stream-generation changes, and retain DSP/dry fallback;
+- perform no allocation, lock, wait, IPC, resampling, or inference in the audio
+  callback; only bounded copies, simple arithmetic and lock-free publication
+  are allowed there.
+
+The initial profile is deliberately limited to 48 kHz and 60 ms blocks. Other
+sample rates and block durations require explicit capacity, resampler and
+latency tests before they can be enabled. The 20/40/60 ms benchmark matrix
+remains a later measured optimization, not an assumption that all profiles
+already work.
+
 ## Sequence, deadline and fallback policy
 
 1. The host publishes an input block with a new sequence and stream generation into a free slot. If no slot is free, it drops the new AI block and keeps the normal DSP/dry output.
