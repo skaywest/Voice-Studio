@@ -24,14 +24,32 @@ VoiceStudioAudioProcessorEditor::VoiceStudioAudioProcessorEditor(VoiceStudioAudi
     workerStatusLabel.setJustificationType(juce::Justification::centred);
     startWorkerButton.onClick = [this]
     {
-        juce::FileChooser chooser("Select VoiceStudioWorker.exe", {}, "*.exe");
-        if (chooser.browseForFileToOpen())
-        {
-            if (!processor.launchWorker(chooser.getResult()))
-                workerStatusLabel.setText("WORKER START FAILED - CHECK EXE / PERMISSIONS", juce::dontSendNotification);
-            else
-                workerStatusLabel.setText(processor.workerStatusText(), juce::dontSendNotification);
-        }
+        if (workerFileChooser != nullptr)
+            return;
+
+        workerFileChooser = std::make_unique<juce::FileChooser>(
+            "Select VoiceStudioWorker.exe", juce::File{}, "*.exe");
+        juce::Component::SafePointer<VoiceStudioAudioProcessorEditor> safeThis(this);
+        workerFileChooser->launchAsync(
+            juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles,
+            [safeThis](const juce::FileChooser& chooser)
+            {
+                if (safeThis == nullptr)
+                    return;
+
+                const auto selectedFile = chooser.getResult();
+                if (selectedFile != juce::File{})
+                {
+                    if (!safeThis->processor.launchWorker(selectedFile))
+                        safeThis->workerStatusLabel.setText(
+                            "WORKER START FAILED - CHECK EXE / PERMISSIONS", juce::dontSendNotification);
+                    else
+                        safeThis->workerStatusLabel.setText(
+                            safeThis->processor.workerStatusText(), juce::dontSendNotification);
+                }
+
+                safeThis->workerFileChooser.reset();
+            });
     };
     stopWorkerButton.onClick = [this]
     {
@@ -120,6 +138,6 @@ void VoiceStudioAudioProcessorEditor::timerCallback()
     processor.serviceWorker();
     workerStatusLabel.setText(processor.workerStatusText(), juce::dontSendNotification);
     const bool running = processor.workerIsRunning();
-    startWorkerButton.setEnabled(!running);
+    startWorkerButton.setEnabled(!running && workerFileChooser == nullptr);
     stopWorkerButton.setEnabled(running);
 }

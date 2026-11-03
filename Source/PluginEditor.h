@@ -11,6 +11,7 @@ public:
 private:
     void showPage(bool library);
     VoiceStudioAudioProcessor& processor;
+    std::unique_ptr<juce::FileChooser> workerFileChooser;
     juce::TextButton effectsTab { "EFFECTS" }, libraryTab { "VOICE LIBRARY" };
     juce::ToggleButton aiButton { "AI VOICE (NOT IMPLEMENTED)" }, dspButton { "ENABLE DSP PROCESSING" };
     juce::ToggleButton highPassButton { "LOW CUT 80 Hz" }, presenceButton { "VOICE PRESENCE +2.5 dB" }, compressorButton { "COMPRESSOR 3:1" };
