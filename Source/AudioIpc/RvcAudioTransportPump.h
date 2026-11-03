@@ -25,7 +25,8 @@ public:
     // transfers complete mono RVC blocks into the shared-memory input slots.
     std::uint32_t publishPendingInput(AudioBlockRegion& region, std::uint64_t nowNs,
         std::uint64_t deadlineBudgetNs = kDefaultDeadlineBudgetNs,
-        std::uint64_t expectedGeneration = 0) noexcept
+        std::uint64_t expectedGeneration = 0,
+        std::uint64_t expectedSessionGeneration = 0) noexcept
     {
         if (nowNs == 0 || deadlineBudgetNs == 0)
             return 0;
@@ -35,7 +36,8 @@ public:
             RvcAudioStreamAdapter::InputBlock block{};
             if (!stream.tryPopInputBlock(block))
                 break;
-            if (expectedGeneration != 0 && block.generation != expectedGeneration)
+            if ((expectedGeneration != 0 && block.generation != expectedGeneration) ||
+                (expectedSessionGeneration != 0 && block.sessionGeneration != expectedSessionGeneration))
             {
                 droppedInput.fetch_add(1, std::memory_order_relaxed);
                 continue;
@@ -50,7 +52,7 @@ public:
                 continue;
             }
             pending[(pendingRead + pendingCount) % kPendingCapacity] =
-                PendingBlock{ block.sequence, block.generation, deadline };
+                PendingBlock{ block.sequence, block.generation, block.sessionGeneration, deadline };
             ++pendingCount;
             ++published;
         }
@@ -58,7 +60,8 @@ public:
     }
 
     // Control-thread only. The single Worker stream is consumed in input order.
-    std::uint32_t collectReadyOutput(AudioBlockRegion& region, std::uint64_t nowNs) noexcept
+    std::uint32_t collectReadyOutput(AudioBlockRegion& region, std::uint64_t nowNs,
+        std::uint64_t expectedSessionGeneration = 0) noexcept
     {
         if (nowNs == 0)
             return 0;
@@ -78,9 +81,11 @@ public:
                     RvcAudioStreamAdapter::kBlockFrames, 1, kSampleRate,
                     expected.sequence, expected.generation, nowNs))
                 break;
-            if (!stream.publishConvertedBlock(samples.data(),
+            if (expectedSessionGeneration != 0 && expected.sessionGeneration != expectedSessionGeneration)
+                droppedOutput.fetch_add(1, std::memory_order_relaxed);
+            else if (!stream.publishConvertedBlock(samples.data(),
                     RvcAudioStreamAdapter::kBlockFrames,
-                    expected.sequence, expected.generation))
+                    expected.sequence, expected.generation, expected.sessionGeneration))
                 droppedOutput.fetch_add(1, std::memory_order_relaxed);
             else
                 ++collected;
@@ -97,7 +102,7 @@ public:
     std::uint64_t expiredOutputBlockCount() const noexcept { return expiredOutput.load(std::memory_order_relaxed); }
 
 private:
-    struct PendingBlock { std::uint64_t sequence = 0, generation = 0, deadlineNs = 0; };
+    struct PendingBlock { std::uint64_t sequence = 0, generation = 0, sessionGeneration = 0, deadlineNs = 0; };
     void popPending() noexcept { pendingRead = (pendingRead + 1) % kPendingCapacity; --pendingCount; }
 
     RvcAudioStreamAdapter& stream;

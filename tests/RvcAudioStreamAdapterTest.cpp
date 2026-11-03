@@ -108,6 +108,26 @@ int main()
     CHECK(newPart.frames == 256 && newPart.sequence == 22);
     CHECK(midBlockReset.discardedStaleOutputBlockCount() == 1);
 
+    // A new AI session in the same Worker generation discards incomplete input.
+    RvcAudioStreamAdapter sessionInput;
+    std::vector<float> sessionSamples(1500, 0.25f);
+    CHECK(sessionInput.pushHostInput(sessionSamples.data(), nullptr, 1500, 1, 44, 1));
+    CHECK(sessionInput.pushHostInput(full.data(), nullptr, block, 1, 44, 2));
+    CHECK(sessionInput.tryPopInputBlock(input));
+    CHECK(input.generation == 44 && input.sessionGeneration == 2 && input.sequence == 1);
+    for (const auto sample : input.samples) CHECK(sample == 0.1f);
+    CHECK(!sessionInput.tryPopInputBlock(input));
+
+    // A partially consumed output from a previous session is never replayed.
+    RvcAudioStreamAdapter sessionOutput;
+    CHECK(sessionOutput.publishConvertedBlock(converted.data(), block, 31, 44, 1));
+    auto sessionPart = sessionOutput.pullConvertedOutput(partial.data(), 256, 44, 1);
+    CHECK(sessionPart.frames == 256 && sessionPart.sequence == 31);
+    CHECK(sessionOutput.publishConvertedBlock(converted.data(), block, 32, 44, 2));
+    auto nextSessionPart = sessionOutput.pullConvertedOutput(afterReset.data(), 256, 44, 2);
+    CHECK(nextSessionPart.frames == 256 && nextSessionPart.sequence == 32);
+    CHECK(sessionOutput.discardedStaleOutputBlockCount() == 1);
+
     // Oversized host callbacks are rejected to keep audio-thread work bounded.
     CHECK(!midBlockReset.pushHostInput(full.data(), nullptr,
                                        RvcAudioStreamAdapter::kMaxHostCallbackFrames + 1,

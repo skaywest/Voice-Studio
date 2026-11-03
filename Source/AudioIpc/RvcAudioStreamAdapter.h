@@ -8,9 +8,8 @@
 namespace voice_studio::ipc
 {
 // Fixed-size, bounded SPSC adapter between arbitrary host callback sizes and
-// the first RVC realtime profile (48 kHz, 60 ms, mono). This component is not
-// connected to the live processor yet; its producer/consumer methods are
-// intended for the audio and Worker threads respectively.
+// the first RVC realtime profile (48 kHz, 60 ms, mono). Producer/consumer
+// methods are shared by the audio and Worker threads.
 class RvcAudioStreamAdapter final
 {
 public:
@@ -22,6 +21,7 @@ public:
     {
         std::uint64_t sequence = 0;
         std::uint64_t generation = 0;
+        std::uint64_t sessionGeneration = 0;
         std::array<float, kBlockFrames> samples{};
     };
 
@@ -40,16 +40,17 @@ public:
     // Complete blocks that encounter a full queue are dropped as a whole.
     bool pushHostInput(const float* left, const float* right,
                        std::uint32_t frames, std::uint32_t channels,
-                       std::uint64_t generation) noexcept
+                       std::uint64_t generation, std::uint64_t sessionGeneration = 1) noexcept
     {
-        if (left == nullptr || frames == 0 || frames > kMaxHostCallbackFrames || generation == 0 ||
+        if (left == nullptr || frames == 0 || frames > kMaxHostCallbackFrames || generation == 0 || sessionGeneration == 0 ||
             (channels != 1 && channels != 2) || (channels == 2 && right == nullptr))
             return false;
 
-        if (generation != inputGeneration)
+        if (generation != inputGeneration || sessionGeneration != inputSessionGeneration)
         {
             inputFrames = 0;
             inputGeneration = generation;
+            inputSessionGeneration = sessionGeneration;
         }
 
         for (std::uint32_t i = 0; i < frames; ++i)
@@ -65,7 +66,7 @@ public:
             inputAccumulator[inputFrames++] = sample;
             if (inputFrames == kBlockFrames)
             {
-                if (!enqueueInput(inputAccumulator.data(), nextSequence, inputGeneration))
+                if (!enqueueInput(inputAccumulator.data(), nextSequence, inputGeneration, inputSessionGeneration))
                     droppedInputBlocks.fetch_add(1, std::memory_order_relaxed);
                 ++nextSequence;
                 inputFrames = 0;
@@ -85,6 +86,7 @@ public:
         const auto& source = inputQueue[read % kQueueCapacity];
         destination.sequence = source.sequence;
         destination.generation = source.generation;
+        destination.sessionGeneration = source.sessionGeneration;
         destination.samples = source.samples;
         inputRead.store(read + 1, std::memory_order_release);
         return true;
@@ -92,10 +94,11 @@ public:
 
     // Worker-thread producer. Output must correspond to one complete RVC block.
     bool publishConvertedBlock(const float* samples, std::uint32_t frames,
-                               std::uint64_t sequence, std::uint64_t generation) noexcept
+                               std::uint64_t sequence, std::uint64_t generation,
+                               std::uint64_t sessionGeneration = 1) noexcept
     {
         if (samples == nullptr || frames != kBlockFrames ||
-            sequence == 0 || generation == 0)
+            sequence == 0 || generation == 0 || sessionGeneration == 0)
             return false;
 
         const auto write = outputWrite.load(std::memory_order_relaxed);
@@ -114,6 +117,7 @@ public:
         }
         destination.sequence = sequence;
         destination.generation = generation;
+        destination.sessionGeneration = sessionGeneration;
         for (std::uint32_t i = 0; i < kBlockFrames; ++i)
             destination.samples[i] = samples[i];
         outputWrite.store(write + 1, std::memory_order_release);
@@ -124,15 +128,15 @@ public:
     // generation, retaining a partially consumed block across host callbacks.
     // A missing block is an underflow; caller must keep DSP/dry fallback.
     OutputRead pullConvertedOutput(float* destination, std::uint32_t frames,
-                                   std::uint64_t generation) noexcept
+                                   std::uint64_t generation, std::uint64_t sessionGeneration = 1) noexcept
     {
         OutputRead result{};
-        if (destination == nullptr || frames == 0 || generation == 0)
+        if (destination == nullptr || frames == 0 || generation == 0 || sessionGeneration == 0)
             return result;
 
         while (result.frames < frames)
         {
-            if (outputBlockActive && activeOutputGeneration != generation)
+            if (outputBlockActive && (activeOutputGeneration != generation || activeOutputSessionGeneration != sessionGeneration))
             {
                 const auto staleRead = outputRead.load(std::memory_order_relaxed);
                 outputRead.store(staleRead + 1, std::memory_order_release);
@@ -140,6 +144,7 @@ public:
                 outputOffset = 0;
                 activeOutputSequence = 0;
                 activeOutputGeneration = 0;
+                activeOutputSessionGeneration = 0;
                 discardedStaleOutputBlocks.fetch_add(1, std::memory_order_relaxed);
             }
 
@@ -151,7 +156,7 @@ public:
                     break;
 
                 const auto& candidate = outputQueue[read % kQueueCapacity];
-                if (candidate.generation != generation)
+                if (candidate.generation != generation || candidate.sessionGeneration != sessionGeneration)
                 {
                     outputRead.store(read + 1, std::memory_order_release);
                     discardedStaleOutputBlocks.fetch_add(1, std::memory_order_relaxed);
@@ -162,6 +167,7 @@ public:
                 outputOffset = 0;
                 activeOutputSequence = candidate.sequence;
                 activeOutputGeneration = candidate.generation;
+                activeOutputSessionGeneration = candidate.sessionGeneration;
             }
 
             const auto read = outputRead.load(std::memory_order_relaxed);
@@ -184,6 +190,7 @@ public:
                 outputOffset = 0;
                 activeOutputSequence = 0;
                 activeOutputGeneration = 0;
+                activeOutputSessionGeneration = 0;
             }
         }
         return result;
@@ -217,6 +224,7 @@ private:
     {
         std::uint64_t sequence = 0;
         std::uint64_t generation = 0;
+        std::uint64_t sessionGeneration = 0;
         std::array<float, kBlockFrames> samples{};
     };
 
@@ -227,7 +235,7 @@ private:
     }
 
     bool enqueueInput(const float* samples, std::uint64_t sequence,
-                      std::uint64_t generation) noexcept
+                      std::uint64_t generation, std::uint64_t sessionGeneration) noexcept
     {
         const auto write = inputWrite.load(std::memory_order_relaxed);
         const auto read = inputRead.load(std::memory_order_acquire);
@@ -237,6 +245,7 @@ private:
         auto& destination = inputQueue[write % kQueueCapacity];
         destination.sequence = sequence;
         destination.generation = generation;
+        destination.sessionGeneration = sessionGeneration;
         for (std::uint32_t i = 0; i < kBlockFrames; ++i)
             destination.samples[i] = samples[i];
         inputWrite.store(write + 1, std::memory_order_release);
@@ -251,9 +260,11 @@ private:
     std::uint32_t inputFrames = 0;
     std::uint32_t outputOffset = 0;
     std::uint64_t inputGeneration = 0;
+    std::uint64_t inputSessionGeneration = 0;
     std::uint64_t nextSequence = 1;
     std::uint64_t activeOutputSequence = 0;
     std::uint64_t activeOutputGeneration = 0;
+    std::uint64_t activeOutputSessionGeneration = 0;
     bool outputBlockActive = false;
     std::atomic<std::uint64_t> droppedInputBlocks{0};
     std::atomic<std::uint64_t> invalidInputBlocks{0};

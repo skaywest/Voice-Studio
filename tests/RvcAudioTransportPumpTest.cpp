@@ -78,5 +78,34 @@ int main()
     for (std::uint32_t i = kAudioBlockInputSlotBegin;
          i < kAudioBlockInputSlotBegin + kAudioBlockInputSlotCount; ++i)
         CHECK(staleRegion.slots[i].state == static_cast<LONG>(AudioBlockSlotState::free));
+    // A queued block from an earlier AI session is rejected even when
+    // the Worker generation is unchanged.
+    AudioBlockRegion sessionRegion{}; initialise(sessionRegion);
+    RvcAudioStreamAdapter sessionAdapter; RvcAudioTransportPump sessionPump(sessionAdapter);
+    CHECK(sessionAdapter.pushHostInput(input.data(), nullptr,
+        RvcAudioStreamAdapter::kBlockFrames, 1, 12, 1));
+    CHECK(sessionPump.publishPendingInput(sessionRegion, 4'000'000'000ull,
+        RvcAudioTransportPump::kDefaultDeadlineBudgetNs, 12, 2) == 0);
+    CHECK(sessionPump.droppedInputBlockCount() == 1);
+    for (std::uint32_t i = kAudioBlockInputSlotBegin;
+         i < kAudioBlockInputSlotBegin + kAudioBlockInputSlotCount; ++i)
+        CHECK(sessionRegion.slots[i].state == static_cast<LONG>(AudioBlockSlotState::free));
+
+    // A late response is consumed from shared memory to reclaim its slot,
+    // but is not forwarded to the new AI session.
+    CHECK(sessionAdapter.pushHostInput(input.data(), nullptr,
+        RvcAudioStreamAdapter::kBlockFrames, 1, 12, 1));
+    CHECK(sessionPump.publishPendingInput(sessionRegion, 5'000'000'000ull,
+        RvcAudioTransportPump::kDefaultDeadlineBudgetNs, 12, 1) == 1);
+    workerEchoOne(sessionRegion);
+    CHECK(sessionPump.collectReadyOutput(sessionRegion, 5'010'000'000ull, 2) == 0);
+    CHECK(sessionPump.pendingWorkerBlocks() == 0);
+    CHECK(sessionAdapter.pendingOutputBlocks() == 0);
+    bool outputSlotsFree = true;
+    for (std::uint32_t i = kAudioBlockOutputSlotBegin;
+         i < kAudioBlockOutputSlotBegin + kAudioBlockOutputSlotCount; ++i)
+        outputSlotsFree = outputSlotsFree &&
+            sessionRegion.slots[i].state == static_cast<LONG>(AudioBlockSlotState::free);
+    CHECK(outputSlotsFree);
     return 0;
 }
