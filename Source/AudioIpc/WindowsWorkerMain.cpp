@@ -111,7 +111,7 @@ int runWorker(const std::wstring& pipeName, const std::wstring& mappingName,
         return 11;
 
     std::uint64_t activeRequestId = requestId;
-    bool modelFilesVerified = false;
+    VerifiedModelFiles verifiedModelFiles{};
     std::uint64_t lastHeartbeatNs = monotonicNs();
 
     for (;;)
@@ -144,14 +144,13 @@ int runWorker(const std::wstring& pipeName, const std::wstring& mappingName,
             WorkerModelConfigMessage config{};
             if (!pipe.receiveModelConfig(config, command.timeoutMs) ||
                 !matchesWorkerModelConfigRequest(config, generation, activeRequestId) ||
-                !verifyWorkerModelConfigFiles(config))
+                !verifyWorkerModelConfigFiles(config, verifiedModelFiles))
             {
                 pipe.sendStatus(makeStatus(WorkerState::error, WorkerResult::invalidRequest,
                                            generation, activeRequestId), 1000);
                 return 17;
             }
 
-            modelFilesVerified = true;
             if (!pipe.sendStatus(makeStatus(WorkerState::ready, WorkerResult::ok,
                                             generation, activeRequestId), 1000))
                 return 18;
@@ -162,7 +161,7 @@ int runWorker(const std::wstring& pipeName, const std::wstring& mappingName,
         {
             // File verification is not inference. Keep AI unavailable until a
             // real, audited RVC backend is present, even after a valid manifest.
-            (void) modelFilesVerified;
+            // Verified handles remain owned by verifiedModelFiles until Worker exit.
             return pipe.sendStatus(makeStatus(WorkerState::error,
                                               WorkerResult::unsupported,
                                               generation, activeRequestId), 1000)
