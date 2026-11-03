@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import hashlib
 from pathlib import Path
-from typing import Any, BinaryIO
+from typing import Any
 
 MANIFEST_VERSION = 1
 RVC_ENTRYPOINT = Path("RVCRealtimeVST/worker/rvc_worker.py")
@@ -105,10 +105,23 @@ def verify_selection_manifest(manifest: dict[str, Any]) -> bool:
         model = manifest["model"]
         root = Path(rvc["root"]).resolve(strict=True)
         entrypoint = Path(rvc["entrypoint"]).resolve(strict=True)
+        expected_entrypoint = (root / RVC_ENTRYPOINT).resolve(strict=True)
         selected_model = Path(model["path"]).resolve(strict=True)
-        if not root.is_dir() or not entrypoint.is_file() or not entrypoint.is_relative_to(root):
+        if not root.is_dir() or not entrypoint.is_file():
             return False
-        if not selected_model.is_file() or selected_model.suffix.lower() != ".pth":
+        # Do not accept an arbitrary Python file merely because it is inside
+        # the selected checkout: the manifest must identify the known worker.
+        if entrypoint != expected_entrypoint or not entrypoint.is_relative_to(root):
+            return False
+        if (not selected_model.is_file() or selected_model.suffix.lower() != ".pth"
+                or selected_model.stat().st_size <= 0):
+            return False
+        if (not isinstance(rvc["entrypoint_size_bytes"], int)
+                or isinstance(rvc["entrypoint_size_bytes"], bool)
+                or rvc["entrypoint_size_bytes"] <= 0
+                or not isinstance(model["size_bytes"], int)
+                or isinstance(model["size_bytes"], bool)
+                or model["size_bytes"] <= 0):
             return False
         if entrypoint.stat().st_size != rvc["entrypoint_size_bytes"]:
             return False
@@ -121,9 +134,13 @@ def verify_selection_manifest(manifest: dict[str, Any]) -> bool:
         index = manifest.get("index")
         if index is not None:
             selected_index = Path(index["path"]).resolve(strict=True)
-            if not selected_index.is_file() or selected_index.suffix.lower() != ".index":
+            if (not selected_index.is_file() or selected_index.suffix.lower() != ".index"
+                    or selected_index.stat().st_size <= 0):
                 return False
-            if selected_index.stat().st_size != index["size_bytes"]:
+            if (not isinstance(index["size_bytes"], int)
+                    or isinstance(index["size_bytes"], bool)
+                    or index["size_bytes"] <= 0
+                    or selected_index.stat().st_size != index["size_bytes"]):
                 return False
             if _sha256_file(selected_index) != index["sha256"]:
                 return False

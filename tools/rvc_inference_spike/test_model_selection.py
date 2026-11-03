@@ -84,6 +84,30 @@ class ModelSelectionTests(unittest.TestCase):
                     trust_rvc_source=True, confirm_voice_rights=True,
                 )
 
+    def test_verifier_requires_exact_rvc_worker_entrypoint(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root, _, model, _ = self.make_selection(temp)
+            manifest = build_selection_manifest(
+                root, model, trust_rvc_source=True, confirm_voice_rights=True,
+            )
+            alternate = root / "another_worker.py"
+            alternate.write_text("# another worker\\n", encoding="utf-8")
+            manifest["rvc"]["entrypoint"] = str(alternate)
+            manifest["rvc"]["entrypoint_size_bytes"] = alternate.stat().st_size
+            import hashlib
+            manifest["rvc"]["entrypoint_sha256"] = hashlib.sha256(alternate.read_bytes()).hexdigest()
+            self.assertFalse(verify_selection_manifest(manifest))
+
+    def test_verifier_rejects_empty_selected_files(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root, _, model, index = self.make_selection(temp)
+            manifest = build_selection_manifest(
+                root, model, index_path=index,
+                trust_rvc_source=True, confirm_voice_rights=True,
+            )
+            model.write_bytes(b"")
+            self.assertFalse(verify_selection_manifest(manifest))
+
     def test_verifier_rejects_manifest_tampering(self):
         with tempfile.TemporaryDirectory() as temp:
             root, _, model, _ = self.make_selection(temp)
