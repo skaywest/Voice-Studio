@@ -50,10 +50,13 @@ VoiceStudioAudioProcessor::APVTS::ParameterLayout VoiceStudioAudioProcessor::cre
 
 void VoiceStudioAudioProcessor::prepareToPlay(double sampleRate, int samplesPerBlock)
 {
-    preparedSampleRate = static_cast<std::uint32_t>(juce::jlimit(8000.0, 192000.0, sampleRate));
+    // Reject unsupported host rates rather than silently relabelling their audio as 8/192 kHz.
+    preparedSampleRate = sampleRate >= 8000.0 && sampleRate <= 192000.0
+        ? static_cast<std::uint32_t>(sampleRate) : 0u;
     monotonicAnchorNs = monotonicNowNs();
     audioFramesProcessed = 0;
-    nextAudioSequence = 0;
+    // Keep the sequence monotonic across host re-prepare cycles. A Worker/mapping
+    // session may outlive prepareToPlay(), so resetting could make stale output match.
     juce::dsp::ProcessSpec spec;
     spec.sampleRate = sampleRate;
     spec.maximumBlockSize = static_cast<juce::uint32>(juce::jmax(1, samplesPerBlock));
@@ -104,7 +107,7 @@ void VoiceStudioAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, j
         aiConversionAvailable.load(std::memory_order_acquire) &&
         preparedSampleRate >= 8000 && preparedSampleRate <= 192000 &&
         frames > 0 && frames <= voice_studio::ipc::kAudioBlockMaxFrames &&
-        channels >= 1 && isRealtime())
+        channels >= 1 && isRealtime() == juce::AudioProcessor::Realtime::yes)
     {
         const auto generation = aiGeneration.load(std::memory_order_acquire);
         if (generation != 0)

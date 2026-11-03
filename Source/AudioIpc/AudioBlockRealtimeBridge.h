@@ -76,7 +76,8 @@ public:
             inputSequence, generation, deadlineMonotonicNs);
 
         if (expectedOutputSequence != 0 &&
-            tryConsumeOutputAudioBlock(region, scratch.data(), scratch.size(),
+            tryConsumeOutputAudioBlock(region, scratch.data(),
+                                       static_cast<std::uint32_t>(scratch.size()),
                                        frames, channels, sampleRate,
                                        expectedOutputSequence, generation,
                                        nowMonotonicNs))
