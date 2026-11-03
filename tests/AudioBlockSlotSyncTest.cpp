@@ -100,6 +100,31 @@ void testRealtimeTransportRejectsInvalidAndStaleData()
     CHECK(result[0] == 7.0f && result[1] == 8.0f);
 }
 
+
+void testRealtimeTransportRejectsMismatchedSampleRate()
+{
+    AudioBlockRegion region {};
+    initialiseAudioRegion(region);
+    auto& output = region.slots[kAudioBlockOutputSlotBegin];
+    CHECK(tryBeginAudioBlockWrite(output));
+    output.flags = 0;
+    output.sequence = 1;
+    output.generation = 4;
+    output.deadlineMonotonicNs = 1000;
+    output.sampleRate = 44100;
+    output.channels = 1;
+    output.frames = 2;
+    output.payloadSamples = 2;
+    output.samples[0] = 0.25f;
+    output.samples[1] = -0.25f;
+    CHECK(publishAudioBlockWrite(output));
+
+    float destination[2] { 9.0f, 9.0f };
+    CHECK(!tryConsumeOutputAudioBlock(region, destination, 2, 2, 1, 48000, 4, 999));
+    CHECK(destination[0] == 9.0f && destination[1] == 9.0f);
+    CHECK(output.state == static_cast<std::int32_t>(AudioBlockSlotState::free));
+}
+
 void testRealtimeTransportQueueOverflowIsNonDestructive()
 {
     AudioBlockRegion region {};
@@ -243,6 +268,7 @@ int main()
 {
     testRealtimeTransportPublishAndConsume();
     testRealtimeTransportRejectsInvalidAndStaleData();
+    testRealtimeTransportRejectsMismatchedSampleRate();
     testRealtimeTransportQueueOverflowIsNonDestructive();
     testSingleProducerConsumerTransitions();
     testOnlyOneConcurrentWriterWins();
