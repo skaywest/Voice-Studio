@@ -150,4 +150,5 @@ jobs:
           name: Voice-Studio-no-network-experiment-Windows-x64
           path: |
             build/VoiceStudio_artefacts/Release/VST3/
+            build/Release/VoiceStudioWorker.exe
             network-import-audit.txt
