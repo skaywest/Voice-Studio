@@ -27,6 +27,15 @@ AI inference is not implemented and cannot be enabled in this build. The build i
 ## Worker control (Windows build)
 The GitHub Actions artifact contains both the VST3 bundle and `VoiceStudioWorker.exe`. Install the VST3 as usual, keep the Worker executable in a folder you control, then open the Effects page and choose **SELECT WORKER EXE & START**. The UI reports the Worker lifecycle and **STOP WORKER** closes it. The Worker is not started automatically. Closing the plugin also stops it. A READY Worker is only an IPC/transport status, not an active voice converter.
 
+## External control foundation
+
+A versioned local command ABI has been added for future FIFINE D6, keyboard
+shortcut and macro-pad integration. It defines stable preset IDs
+(`original`, `robot`, `recurrent`, `radio_operator`, `deep_male`,
+`female`, `demon`, `anime`) and validated DSP, mute, gain and AI commands.
+The local named-pipe endpoint and actual AI preset engine are not implemented
+yet; no network control listener is opened.
+
 ## Planned AI architecture
 A separate, optional, visible local inference worker may be added after its license, dependencies, model format, and IPC design are reviewed. AI will be off by default. Disabling AI will retain the model for 30 seconds, then release it; **UNLOAD AI NOW** will request immediate shutdown. Worker failure/timeouts must fall back to the non-AI DSP path.
 

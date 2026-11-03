@@ -99,6 +99,12 @@ if(VOICE_STUDIO_BUILD_SMOKE_TESTS)
     target_compile_features(VoiceStudioWorkerControlAbiTest PRIVATE cxx_std_17)
     add_test(NAME VoiceStudioWorkerControlAbiTest COMMAND VoiceStudioWorkerControlAbiTest)
 
+    # Stable, versioned local command contract for future FIFINE D6 / hotkey integrations.
+    add_executable(VoiceStudioVoiceControlAbiTest tests/VoiceControlCommandAbiTest.cpp)
+    target_include_directories(VoiceStudioVoiceControlAbiTest PRIVATE Source)
+    target_compile_features(VoiceStudioVoiceControlAbiTest PRIVATE cxx_std_17)
+    add_test(NAME VoiceStudioVoiceControlAbiTest COMMAND VoiceStudioVoiceControlAbiTest)
+
     # Control-thread worker lifecycle policy and fallback behavior.
     add_executable(VoiceStudioWorkerLifecycleTest tests/WorkerLifecycleTest.cpp)
     target_include_directories(VoiceStudioWorkerLifecycleTest PRIVATE Source)
