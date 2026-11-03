@@ -85,6 +85,9 @@ jobs:
       - name: Build Windows Worker control pipe test
         run: cmake --build build --config Release --target VoiceStudioWindowsWorkerControlPipeTest
 
+      - name: Build realtime audio mapping lifetime test
+        run: cmake --build build --config Release --target VoiceStudioAudioBlockRealtimeAccessTest
+
       - name: Build atomic audio block slot synchronization tests
         run: cmake --build build --config Release --target VoiceStudioAudioBlockSlotSyncTest
 
