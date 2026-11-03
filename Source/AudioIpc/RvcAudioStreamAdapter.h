@@ -140,7 +140,6 @@ public:
                 outputOffset = 0;
                 activeOutputSequence = 0;
                 activeOutputGeneration = 0;
-                activeOutputGeneration = 0;
                 discardedStaleOutputBlocks.fetch_add(1, std::memory_order_relaxed);
             }
 
@@ -184,6 +183,7 @@ public:
                 outputBlockActive = false;
                 outputOffset = 0;
                 activeOutputSequence = 0;
+                activeOutputGeneration = 0;
             }
         }
         return result;
@@ -262,5 +262,5 @@ private:
 };
 
 static_assert(RvcAudioStreamAdapter::atomicsAreAlwaysLockFree(),
-              "RVC audio stream queues require lock-free 32-bit atomics");
+              "RVC audio stream queues require lock-free 32-bit and 64-bit atomics");
 } // namespace voice_studio::ipc
