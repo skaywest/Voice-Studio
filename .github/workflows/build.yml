@@ -116,6 +116,9 @@ jobs:
       - name: Build Windows shared-memory process test
         run: cmake --build build --config Release --target VoiceStudioSharedMemoryPocTest
 
+      - name: Build Worker model file SHA-256 verifier tests
+        run: cmake --build build --config Release --target VoiceStudioWorkerModelFileVerifierTest
+
       - name: Run all registered tests (including cross-process IPC)
         run: ctest --test-dir build -C Release --output-on-failure --repeat until-fail:3
 
