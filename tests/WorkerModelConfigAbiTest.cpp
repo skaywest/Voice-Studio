@@ -21,6 +21,10 @@ static WorkerModelConfigMessage validConfig() {
 }
 int main() {
     const auto m = validConfig(); assert(hasValidWorkerModelConfig(m));
+    assert(matchesWorkerModelConfigRequest(m, 4, 9));
+    assert(!matchesWorkerModelConfigRequest(m, 5, 9));
+    assert(!matchesWorkerModelConfigRequest(m, 4, 10));
+    assert(!matchesWorkerModelConfigRequest(m, 0, 9));
     auto x = m; x.generation = 0; assert(!hasValidWorkerModelConfig(x));
     x = m; x.flags &= ~kWorkerModelConfigFlagVoiceRightsConfirmed; assert(!hasValidWorkerModelConfig(x));
     x = m; x.entrypointSha256[0] = 0; assert(!hasValidWorkerModelConfig(x));

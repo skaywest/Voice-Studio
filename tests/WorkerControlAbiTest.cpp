@@ -27,6 +27,9 @@ int main()
     invalidCommand = command;
     invalidCommand.size--;
     assert(!hasValidWorkerCommand(invalidCommand));
+    auto configureCommand = command;
+    configureCommand.command = static_cast<std::uint16_t>(WorkerCommand::configureModel);
+    assert(hasValidWorkerCommand(configureCommand));
     invalidCommand = command;
     invalidCommand.command = 99;
     assert(!hasValidWorkerCommand(invalidCommand));

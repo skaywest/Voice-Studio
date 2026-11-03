@@ -19,7 +19,8 @@ enum class WorkerCommand : std::uint16_t
     start = 1,
     stop = 2,
     unloadModel = 3,
-    ping = 4
+    ping = 4,
+    configureModel = 5
 };
 
 enum class WorkerState : std::uint16_t
@@ -81,7 +82,7 @@ static_assert(std::is_trivially_copyable<WorkerStatusMessage>::value, "Status mu
 inline bool isKnownWorkerCommand(std::uint16_t value) noexcept
 {
     return value >= static_cast<std::uint16_t>(WorkerCommand::start) &&
-           value <= static_cast<std::uint16_t>(WorkerCommand::ping);
+           value <= static_cast<std::uint16_t>(WorkerCommand::configureModel);
 }
 
 inline bool isKnownWorkerState(std::uint16_t value) noexcept

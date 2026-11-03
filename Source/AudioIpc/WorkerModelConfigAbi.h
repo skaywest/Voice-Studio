@@ -12,8 +12,7 @@ inline constexpr std::uint32_t kWorkerModelConfigFlagSourceTrusted = 1u << 0;
 inline constexpr std::uint32_t kWorkerModelConfigFlagVoiceRightsConfirmed = 1u << 1;
 inline constexpr std::uint32_t kWorkerModelConfigFlagHasIndex = 1u << 2;
 inline constexpr std::uint32_t kWorkerModelConfigKnownFlags = 7u;
-// Pointer-free fixed-size record. The current Worker does not yet transmit or
-// consume this record; it defines and tests the bounded model-selection ABI.
+// Pointer-free fixed-size record used by the bounded model-selection IPC ABI.
 struct WorkerModelConfigMessage {
     std::uint32_t magic = kWorkerModelConfigMagic;
     std::uint16_t version = kWorkerModelConfigVersion;
@@ -91,6 +90,12 @@ inline bool hasModelConfigExtension(const char16_t* path, std::uint16_t length,
     for (std::size_t i = 0; i < extLength; ++i)
         if (modelConfigLower(path[offset + i]) != modelConfigLower(ext[i])) return false;
     return true;
+}
+inline bool matchesWorkerModelConfigRequest(const WorkerModelConfigMessage& m,
+                                            std::uint64_t generation,
+                                            std::uint64_t requestId) noexcept {
+    return generation != 0 && requestId != 0 &&
+           m.generation == generation && m.requestId == requestId;
 }
 inline bool hasValidWorkerModelConfig(const WorkerModelConfigMessage& m) noexcept {
     if (m.magic != kWorkerModelConfigMagic || m.version != kWorkerModelConfigVersion ||
