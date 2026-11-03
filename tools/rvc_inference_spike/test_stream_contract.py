@@ -74,6 +74,29 @@ class StreamContractTests(unittest.TestCase):
             wrong.write_bytes(b"fixture")
             with self.assertRaises(ValueError):
                 build_engine_config(root, wrong)
+            empty = Path(temp) / "empty.pth"
+            empty.touch()
+            with self.assertRaisesRegex(ValueError, "must not be empty"):
+                build_engine_config(root, empty)
+
+    def test_config_rejects_directory_without_rvc_worker_source(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp) / "not-rvc"
+            root.mkdir()
+            model = Path(temp) / "voice.pth"
+            model.write_bytes(b"fixture")
+            with self.assertRaisesRegex(ValueError, "RVCRealtimeVST/worker/rvc_worker.py"):
+                build_engine_config(root, model)
+
+    def test_config_rejects_empty_index(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = self.make_rvc_root(temp)
+            model = Path(temp) / "voice.pth"
+            model.write_bytes(b"fixture")
+            index = Path(temp) / "empty.index"
+            index.touch()
+            with self.assertRaisesRegex(ValueError, "index_path must not be empty"):
+                build_engine_config(root, model, index)
 
     def test_adapter_checks_engine_geometry_before_start(self):
         engine = FakeEngine()
