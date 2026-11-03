@@ -35,6 +35,7 @@ class PreflightTests(unittest.TestCase):
             "cuda_kernel_passed", "fp16_kernel_passed",
             "rvc_api_imported", "rvc_api_compatible",
             "rvc_cuda_device_selected",
+            "rvc_realtime_worker_found", "rvc_realtime_worker_api_compatible",
         )
         checks = {key: True for key in required}
         self.assertTrue(strict_cuda_requirements_met(checks))

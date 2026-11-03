@@ -7,10 +7,12 @@ load a checkpoint, or perform voice conversion.
 ## Why this stage exists
 
 The upstream RVC realtime VST implementation exposes an inference API through
-`infer.rtrvc.RVC`. Its constructor accepts pitch/formant, checkpoint/index
-paths and a Config object; its `infer` method accepts a 16 kHz input tensor,
-block/context lengths and an F0 method. This preflight imports that API and
-checks the expected method signatures before we write our own inference bridge.
+`infer.rtrvc.RVC` and a streaming wrapper through
+`RVCRealtimeVST/worker/rvc_worker.py` (`RVCStreamEngine`). The preflight checks
+both APIs, including the streaming engine constructor and ordered block-process
+signature. The streaming worker source is inspected with Python AST; it is not
+executed by this API check. This validates the integration boundary without
+loading a checkpoint or running inference.
 
 ## Run on a machine with an existing RVC runtime
 
@@ -41,6 +43,7 @@ this stage. No model is required to validate the RVC source/API and GPU runtime.
 - GPU name, compute capability and available memory.
 - Actual imports of `configs.config` and `infer.rtrvc`.
 - `RVC` constructor and `RVC.infer` signatures match the expected adapter API.
+- The upstream `RVCStreamEngine` constructor and `process` block signature are present and compatible.
 - Whether the RVC Config selects CUDA rather than silently falling back to CPU.
 - A strict readiness gate that rejects missing PyTorch/Torchaudio, mismatched package versions, unavailable CUDA, failed FP32/FP16 kernels, and incompatible RVC APIs.
 

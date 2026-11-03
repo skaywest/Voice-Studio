@@ -14,6 +14,8 @@ import subprocess
 import sys
 from typing import Any
 
+from realtime_worker_api import inspect_realtime_worker_api
+
 REQUIRED_FILES = (
     "configs/config.py",
     "configs/v1/32k.json",
@@ -24,6 +26,7 @@ REQUIRED_FILES = (
     "infer/rtrvc.py",
     "infer/hubert.py",
     "tools/cuda_graph.py",
+    "RVCRealtimeVST/worker/rvc_worker.py",
 )
 REQUIRED_MODULES = ("torch", "torchaudio", "numpy", "librosa", "faiss", "parselmouth")
 
@@ -61,9 +64,18 @@ def _runtime_probe(rvc_root: Path) -> dict[str, Any]:
         "rvc_api_imported": False,
         "rvc_api_compatible": False,
         "rvc_cuda_device_selected": False,
+        "rvc_realtime_worker_found": False,
+        "rvc_realtime_worker_api_compatible": False,
     })
     os.chdir(root)
     sys.path.insert(0, str(root))
+
+    realtime_worker_api = inspect_realtime_worker_api(
+        root / "RVCRealtimeVST/worker/rvc_worker.py"
+    )
+    report["rvc_realtime_worker_api"] = realtime_worker_api
+    report["checks"]["rvc_realtime_worker_found"] = realtime_worker_api.get("available") is True
+    report["checks"]["rvc_realtime_worker_api_compatible"] = realtime_worker_api.get("compatible") is True
     sys.argv = [sys.argv[0]]
 
     for name in REQUIRED_MODULES:
@@ -272,6 +284,7 @@ def strict_cuda_requirements_met(checks: dict[str, Any]) -> bool:
         "cuda_kernel_passed", "fp16_kernel_passed",
         "rvc_api_imported", "rvc_api_compatible",
         "rvc_cuda_device_selected",
+        "rvc_realtime_worker_found", "rvc_realtime_worker_api_compatible",
     )
     return all(checks.get(key) is True for key in required)
 
