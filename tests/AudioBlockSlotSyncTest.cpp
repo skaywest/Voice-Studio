@@ -66,7 +66,7 @@ void testRealtimeTransportPublishAndConsume()
     CHECK(tryConsumeOutputAudioBlock(region, result, 6, 3, 2, 48000, 1, 9, 999));
     for (std::size_t i = 0; i < 6; ++i)
         CHECK(result[i] == input[i]);
-    CHECK(!tryConsumeOutputAudioBlock(region, result, 6, 3, 2, 48000, 9, 999));
+    CHECK(!tryConsumeOutputAudioBlock(region, result, 6, 3, 2, 48000, 1, 9, 999));
 }
 
 void testRealtimeTransportRejectsInvalidAndStaleData()
@@ -95,7 +95,7 @@ void testRealtimeTransportRejectsInvalidAndStaleData()
     output.samples[0] = 0.3f;
     output.samples[1] = -0.3f;
     CHECK(publishAudioBlockWrite(output));
-    CHECK(!tryConsumeOutputAudioBlock(region, result, 2, 1, 2, 48000, 1, 100));
+    CHECK(!tryConsumeOutputAudioBlock(region, result, 2, 1, 2, 48000, 1, 1, 100));
     CHECK(output.state == static_cast<std::int32_t>(AudioBlockSlotState::free));
     CHECK(result[0] == 7.0f && result[1] == 8.0f);
 }
