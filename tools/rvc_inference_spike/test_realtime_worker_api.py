@@ -16,33 +16,54 @@ class RVCStreamEngine:
 
 
 class RealtimeWorkerApiTests(unittest.TestCase):
-    def test_expected_upstream_streaming_api_is_accepted(self):
+    def inspect(self, source):
         with tempfile.TemporaryDirectory() as temp:
             path = Path(temp) / "rvc_worker.py"
-            path.write_text(COMPATIBLE_SOURCE, encoding="utf-8")
-            report = inspect_realtime_worker_api(path)
-            self.assertTrue(report["available"])
-            self.assertTrue(report["engine_class_found"])
-            self.assertTrue(report["compatible"])
+            path.write_text(source, encoding="utf-8")
+            return inspect_realtime_worker_api(path)
+
+    def test_expected_upstream_streaming_api_is_accepted(self):
+        report = self.inspect(COMPATIBLE_SOURCE)
+        self.assertTrue(report["available"])
+        self.assertTrue(report["engine_class_found"])
+        self.assertTrue(report["compatible"])
+        self.assertFalse(report["block_contract_verified"])
 
     def test_incompatible_process_signature_is_rejected(self):
-        with tempfile.TemporaryDirectory() as temp:
-            path = Path(temp) / "rvc_worker.py"
-            path.write_text(
-                COMPATIBLE_SOURCE.replace("f0_method", "pitch_method"),
-                encoding="utf-8",
-            )
-            report = inspect_realtime_worker_api(path)
-            self.assertTrue(report["available"])
-            self.assertFalse(report["compatible"])
+        report = self.inspect(
+            COMPATIBLE_SOURCE.replace("f0_method", "pitch_method")
+        )
+        self.assertTrue(report["available"])
+        self.assertFalse(report["compatible"])
+
+    def test_required_keyword_only_argument_is_rejected(self):
+        source = COMPATIBLE_SOURCE.replace(
+            "f0_method):", "f0_method, *, sample_rate):"
+        )
+        self.assertFalse(self.inspect(source)["compatible"])
+
+    def test_variadic_process_signature_is_rejected(self):
+        source = COMPATIBLE_SOURCE.replace(
+            "f0_method):", "f0_method, *args, **kwargs):"
+        )
+        self.assertFalse(self.inspect(source)["compatible"])
+
+    def test_async_process_is_rejected(self):
+        source = COMPATIBLE_SOURCE.replace(
+            "    def process(", "    async def process("
+        )
+        self.assertFalse(self.inspect(source)["compatible"])
+
+    def test_static_process_is_rejected(self):
+        source = COMPATIBLE_SOURCE.replace(
+            "    def process(", "    @staticmethod\n    def process("
+        )
+        self.assertFalse(self.inspect(source)["compatible"])
 
     def test_missing_engine_class_is_rejected(self):
-        with tempfile.TemporaryDirectory() as temp:
-            path = Path(temp) / "rvc_worker.py"
-            path.write_text("class OtherEngine:" + chr(10) + "    pass" + chr(10), encoding="utf-8")
-            report = inspect_realtime_worker_api(path)
-            self.assertFalse(report["available"])
-            self.assertFalse(report["compatible"])
+        report = self.inspect("class OtherEngine:\n    pass\n")
+        self.assertFalse(report["available"])
+        self.assertFalse(report["compatible"])
 
     def test_missing_file_and_invalid_syntax_are_reported(self):
         with tempfile.TemporaryDirectory() as temp:
@@ -55,14 +76,10 @@ class RealtimeWorkerApiTests(unittest.TestCase):
             self.assertIn("SyntaxError", malformed["error"])
 
     def test_source_is_parsed_without_execution(self):
-        with tempfile.TemporaryDirectory() as temp:
-            path = Path(temp) / "rvc_worker.py"
-            path.write_text(
-                "raise RuntimeError('must not execute')" + chr(10) + COMPATIBLE_SOURCE,
-                encoding="utf-8",
-            )
-            report = inspect_realtime_worker_api(path)
-            self.assertTrue(report["compatible"])
+        report = self.inspect(
+            "raise RuntimeError('must not execute')\n" + COMPATIBLE_SOURCE
+        )
+        self.assertTrue(report["compatible"])
 
 
 if __name__ == "__main__":
