@@ -86,6 +86,9 @@ jobs:
       - name: Build cross-process Worker audio transport test
         run: cmake --build build --config Release --target VoiceStudioWindowsAudioBlockWorkerProcessTest
 
+      - name: Build RVC shared-memory transport pump test
+        run: cmake --build build --config Release --target VoiceStudioRvcAudioTransportPumpTest
+
       - name: Build Windows audio shared-memory mapping test
         run: cmake --build build --config Release --target VoiceStudioWindowsAudioBlockMappingTest
 

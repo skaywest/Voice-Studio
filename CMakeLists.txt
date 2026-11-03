@@ -150,6 +150,13 @@ if(VOICE_STUDIO_BUILD_SMOKE_TESTS)
                  COMMAND VoiceStudioWindowsAudioBlockWorkerProcessTest $<TARGET_FILE:VoiceStudioWorker>)
         set_tests_properties(VoiceStudioWindowsAudioBlockWorkerProcessTest PROPERTIES TIMEOUT 20)
 
+        # Control-thread bridge between the in-process RVC adapter and shared-memory audio slots.
+        add_executable(VoiceStudioRvcAudioTransportPumpTest tests/RvcAudioTransportPumpTest.cpp)
+        target_include_directories(VoiceStudioRvcAudioTransportPumpTest PRIVATE Source)
+        target_compile_features(VoiceStudioRvcAudioTransportPumpTest PRIVATE cxx_std_17)
+        target_link_libraries(VoiceStudioRvcAudioTransportPumpTest PRIVATE advapi32)
+        add_test(NAME VoiceStudioRvcAudioTransportPumpTest COMMAND VoiceStudioRvcAudioTransportPumpTest)
+
         # Windows shared audio mapping owner/client and slot handoff test.
         add_executable(VoiceStudioWindowsAudioBlockMappingTest tests/WindowsAudioBlockMappingTest.cpp)
         target_include_directories(VoiceStudioWindowsAudioBlockMappingTest PRIVATE Source)
