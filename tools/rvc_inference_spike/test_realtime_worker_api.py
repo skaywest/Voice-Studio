@@ -10,6 +10,9 @@ class RVCStreamEngine:
     def __init__(self, cfg):
         pass
 
+    def prewarm(self):
+        pass
+
     def process(self, audio, pitch, formant, index_rate, rms_mix, threshold, f0_method):
         return audio
 """
@@ -28,6 +31,12 @@ class RealtimeWorkerApiTests(unittest.TestCase):
         self.assertTrue(report["engine_class_found"])
         self.assertTrue(report["compatible"])
         self.assertFalse(report["block_contract_verified"])
+
+    def test_missing_prewarm_method_is_rejected(self):
+        source = COMPATIBLE_SOURCE.replace("    def prewarm(self):\\n        pass\\n\\n", "")
+        report = self.inspect(source)
+        self.assertFalse(report["compatible"])
+        self.assertFalse(report["prewarm"]["present"])
 
     def test_incompatible_process_signature_is_rejected(self):
         report = self.inspect(

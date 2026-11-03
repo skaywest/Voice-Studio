@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any
 
 EXPECTED_CONSTRUCTOR = ("self", "cfg")
+EXPECTED_PREWARM = ("self",)
 EXPECTED_PROCESS = (
     "self", "audio", "pitch", "formant", "index_rate",
     "rms_mix", "threshold", "f0_method",
@@ -75,6 +76,7 @@ def inspect_realtime_worker_api(worker_path: Path) -> dict[str, Any]:
         "engine_class_found": False,
         "constructor": _method_report(None),
         "process": _method_report(None),
+        "prewarm": _method_report(None),
         # The upstream Python signature does not declare a fixed audio block
         # contract. This remains false until a real adapter/runtime probe
         # verifies sample rate, block framing, output length and statefulness.
@@ -105,10 +107,12 @@ def inspect_realtime_worker_api(worker_path: Path) -> dict[str, Any]:
     }
     report["constructor"] = _method_report(methods.get("__init__"))
     report["process"] = _method_report(methods.get("process"))
+    report["prewarm"] = _method_report(methods.get("prewarm"))
     report["compatible"] = (
         _is_exact_instance_method(report["constructor"], EXPECTED_CONSTRUCTOR)
         and _is_exact_instance_method(report["process"], EXPECTED_PROCESS)
+        and _is_exact_instance_method(report["prewarm"], EXPECTED_PREWARM)
     )
     if not report["compatible"]:
-        report["error"] = "RVCStreamEngine constructor/process call contract mismatch"
+        report["error"] = "RVCStreamEngine constructor/process/prewarm call contract mismatch"
     return report
