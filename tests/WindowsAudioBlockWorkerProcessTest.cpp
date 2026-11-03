@@ -12,12 +12,19 @@
 #include "AudioIpc/WindowsWorkerProcess.h"
 
 #include <cstdint>
+#include <cstdio>
 #include <string>
 
 using namespace voice_studio::ipc;
 
 namespace
 {
+int fail(int code) noexcept
+{
+    std::fprintf(stderr, "WindowsAudioBlockWorkerProcessTest failed at checkpoint %d\\n", code);
+    return code;
+}
+
 std::uint64_t monotonicNs() noexcept
 {
     return static_cast<std::uint64_t>(GetTickCount64()) * 1'000'000ull;
@@ -41,7 +48,7 @@ WorkerCommandMessage makeCommand(WorkerCommand command, std::uint64_t generation
 int wmain(int argc, wchar_t** argv)
 {
     if (argc != 2)
-        return 1;
+        return fail(1);
 
     const auto suffix = std::to_wstring(GetCurrentProcessId());
     const std::wstring pipeName = L"\\\\.\\pipe\\VoiceStudioAudioWorkerTest-" + suffix;
@@ -51,23 +58,23 @@ int wmain(int argc, wchar_t** argv)
 
     WindowsAudioBlockMapping mapping;
     if (!mapping.createServer(mappingName))
-        return 2;
+        return fail(2);
 
     WindowsWorkerControlPipe pipe;
     if (!pipe.createServer(pipeName))
-        return 3;
+        return fail(3);
 
     WindowsWorkerProcess worker;
     const std::wstring arguments = L"--voice-studio-worker \"" + pipeName +
         L"\" \"" + mappingName + L"\" " + std::to_wstring(generation) +
         L" " + std::to_wstring(initialRequestId);
     if (!worker.launch(argv[1], arguments))
-        return 4;
+        return fail(4);
 
     if (!pipe.waitForClient(5000))
     {
         worker.shutdown();
-        return 5;
+        return fail(5);
     }
 
     WorkerStatusMessage ready{};
@@ -76,14 +83,14 @@ int wmain(int argc, wchar_t** argv)
         ready.generation != generation || ready.requestId != initialRequestId)
     {
         worker.shutdown();
-        return 6;
+        return fail(6);
     }
 
     auto& input = mapping.get()->slots[kAudioBlockInputSlotBegin];
     if (!tryBeginAudioBlockWrite(input))
     {
         worker.shutdown();
-        return 7;
+        return fail(7);
     }
 
     input.flags = 0;
@@ -101,7 +108,7 @@ int wmain(int argc, wchar_t** argv)
     if (!publishAudioBlockWrite(input))
     {
         worker.shutdown();
-        return 8;
+        return fail(8);
     }
 
     bool received = false;
@@ -128,7 +135,7 @@ int wmain(int argc, wchar_t** argv)
     if (!received)
     {
         worker.shutdown();
-        return 9;
+        return fail(9);
     }
 
     const auto stop = makeCommand(WorkerCommand::stop, generation, 2);
@@ -139,13 +146,13 @@ int wmain(int argc, wchar_t** argv)
         stopped.requestId != 2)
     {
         worker.shutdown();
-        return 10;
+        return fail(10);
     }
 
     if (!worker.terminate() || !worker.hasExited())
-        return 11;
+        return fail(11);
     if (!worker.closeAfterExit())
-        return 12;
+        return fail(12);
 
     reclaimAudioBlockSlotsAfterWorkerExit(*mapping.get());
     pipe.close();
