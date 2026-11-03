@@ -29,7 +29,7 @@ struct WorkerRuntimeManifestHeader
 {
     std::uint32_t magic = kWorkerRuntimeManifestMagic;
     std::uint16_t version = kWorkerRuntimeManifestVersion;
-    std::uint16_t size = static_cast<std::uint16_t>(sizeof(WorkerRuntimeManifestHeader));
+    std::uint16_t size = 0;
     std::uint32_t entryCount = 0;
     std::uint32_t reserved = 0;
     std::uint64_t totalBytes = 0;

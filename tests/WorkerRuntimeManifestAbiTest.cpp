@@ -24,6 +24,7 @@ static WorkerRuntimeManifestEntry validEntry(const char16_t* path, WorkerRuntime
 int main()
 {
     WorkerRuntimeManifestHeader h{};
+    h.size = static_cast<std::uint16_t>(sizeof(WorkerRuntimeManifestHeader));
     h.entryCount = 2;
     h.totalBytes = 84;
     h.manifestSha256[0] = 1;
