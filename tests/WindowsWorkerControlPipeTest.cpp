@@ -39,7 +39,7 @@ static WorkerModelConfigMessage makeModelConfig()
     setModelPath(message.rootPath, message.rootPathLength, u"C:\\RVC");
     setModelPath(message.entrypointPath, message.entrypointPathLength,
                  u"C:\\RVC\\RVCRealtimeVST\\worker\\rvc_worker.py");
-    setModelPath(message.modelPath, message.modelPathLength, u"D:\\Voices\\voice.pth");
+    setModelPath(message.modelPath, message.modelPathLength, u"C:\\RVC\\Voices\\voice.pth");
     message.entrypointSizeBytes = 100;
     message.modelSizeBytes = 200;
     message.entrypointSha256[0] = 1;

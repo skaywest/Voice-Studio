@@ -9,6 +9,7 @@
 #include <cstdint>
 #include <string>
 #include <cwchar>
+#include <cstdio>
 
 using namespace voice_studio::ipc;
 
@@ -89,7 +90,7 @@ static void cleanup(const std::wstring& root, const std::wstring& entrypoint,
 
 int wmain(int argc, wchar_t** argv)
 {
-    if (argc != 2) return 1;
+    if (argc != 2) { std::fprintf(stderr, "controller-test: expected Worker executable argument, argc=%d\\n", argc); return 1; }
     const std::wstring executable = argv[1];
     const std::wstring pipeName = L"\\\\.\\pipe\\VoiceStudioControllerTest-" +
                                   std::to_wstring(GetCurrentProcessId());
@@ -97,6 +98,7 @@ int wmain(int argc, wchar_t** argv)
     std::wstring root, entrypoint, model;
     if (!createManifest(config, root, entrypoint, model))
     {
+        std::fprintf(stderr, "controller-test: createManifest failed, win32=%lu, root=%ls\\n", GetLastError(), root.c_str());
         cleanup(root, entrypoint, model);
         return 10;
     }
@@ -104,6 +106,7 @@ int wmain(int argc, wchar_t** argv)
     WindowsWorkerController controller;
     if (!controller.launch(executable, pipeName, monotonicNs(), 5000))
     {
+        std::fprintf(stderr, "controller-test: launch failed, win32=%lu\\n", GetLastError());
         cleanup(root, entrypoint, model);
         return 2;
     }
@@ -120,11 +123,13 @@ int wmain(int argc, wchar_t** argv)
         controller.currentState() != WorkerLifecycleState::ready ||
         controller.audioConversionAvailable())
     {
+        std::fprintf(stderr, "controller-test: configureModel failed/state=%u\\n", static_cast<unsigned>(controller.currentState()));
         controller.shutdown(); cleanup(root, entrypoint, model); return 4;
     }
 
     if (!controller.enableAi(3000))
     {
+        std::fprintf(stderr, "controller-test: enableAi command failed/state=%u\\n", static_cast<unsigned>(controller.currentState()));
         controller.shutdown(); cleanup(root, entrypoint, model); return 5;
     }
 
@@ -142,6 +147,7 @@ int wmain(int argc, wchar_t** argv)
     controller.shutdown();
     if (!safeFallback)
     {
+        std::fprintf(stderr, "controller-test: no safe fallback after unsupported AI/state=%u\\n", static_cast<unsigned>(controller.currentState()));
         cleanup(root, entrypoint, model);
         return 6;
     }
@@ -160,6 +166,7 @@ int wmain(int argc, wchar_t** argv)
     const bool rejected = !badController.configureModel(tampered, 5000) &&
                           badController.currentState() == WorkerLifecycleState::faulted &&
                           !badController.audioConversionAvailable();
+    if (!rejected) std::fprintf(stderr, "controller-test: bad digest was not rejected/state=%u\\n", static_cast<unsigned>(badController.currentState()));
     badController.shutdown();
     cleanup(root, entrypoint, model);
     return rejected ? 0 : 8;
