@@ -56,6 +56,10 @@ static bool createManifest(WorkerModelConfigMessage& config, std::wstring& root,
 
     config = WorkerModelConfigMessage{};
     config.size = static_cast<std::uint16_t>(sizeof(config));
+    // The controller replaces these placeholders with the live lifecycle IDs.
+    // The standalone ABI validator still requires non-zero IDs in this fixture.
+    config.generation = 1;
+    config.requestId = 1;
     config.flags = kWorkerModelConfigFlagSourceTrusted | kWorkerModelConfigFlagVoiceRightsConfirmed;
     config.entrypointSizeBytes = 3;
     config.modelSizeBytes = 3;
