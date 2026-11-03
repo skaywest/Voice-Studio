@@ -136,7 +136,7 @@ if(VOICE_STUDIO_BUILD_SMOKE_TESTS)
         add_executable(VoiceStudioWorker Source/AudioIpc/WindowsWorkerMain.cpp)
         target_include_directories(VoiceStudioWorker PRIVATE Source)
         target_compile_features(VoiceStudioWorker PRIVATE cxx_std_17)
-        target_link_libraries(VoiceStudioWorker PRIVATE advapi32)
+        target_link_libraries(VoiceStudioWorker PRIVATE advapi32 bcrypt)
 
         # Exercise the real controller against the separately launched Worker.
         add_executable(VoiceStudioWindowsWorkerControllerTest tests/WindowsWorkerControllerTest.cpp)
