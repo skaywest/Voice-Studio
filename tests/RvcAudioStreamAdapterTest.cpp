@@ -1,9 +1,11 @@
 #include "AudioIpc/RvcAudioStreamAdapter.h"
 
+#include <atomic>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
 #include <limits>
+#include <thread>
 #include <vector>
 
 #define CHECK(expression) do { if (!(expression)) { std::fprintf(stderr, "CHECK failed: %s at %d\n", #expression, __LINE__); std::abort(); } } while (false)
@@ -117,5 +119,74 @@ int main()
     CHECK(outputOverflow.publishConvertedBlock(converted.data(), block, 2, 1));
     CHECK(!outputOverflow.publishConvertedBlock(converted.data(), block, 3, 1));
     CHECK(outputOverflow.droppedOutputBlockCount() == 1);
+    // Exercise the input SPSC queue with a real producer/consumer handoff.
+    // The producer waits for each block to be consumed so this tests publication
+    // ordering without turning the test into a queue-throughput benchmark.
+    RvcAudioStreamAdapter concurrentInput;
+    std::vector<float> concurrentSamples(block, 0.0f);
+    std::atomic<bool> inputThreadFailed{false};
+    constexpr std::uint64_t concurrentBlocks = 128;
+    std::thread inputConsumer([&]
+    {
+        RvcAudioStreamAdapter::InputBlock received{};
+        for (std::uint64_t expected = 1; expected <= concurrentBlocks; ++expected)
+        {
+            while (!concurrentInput.tryPopInputBlock(received))
+                std::this_thread::yield();
+            const float expectedSample = static_cast<float>(expected) / 256.0f;
+            if (received.sequence != expected || received.generation != 99)
+                inputThreadFailed.store(true, std::memory_order_relaxed);
+            for (const auto sample : received.samples)
+                if (sample != expectedSample)
+                    inputThreadFailed.store(true, std::memory_order_relaxed);
+        }
+    });
+    for (std::uint64_t sequence = 1; sequence <= concurrentBlocks; ++sequence)
+    {
+        const float value = static_cast<float>(sequence) / 256.0f;
+        std::fill(concurrentSamples.begin(), concurrentSamples.end(), value);
+        while (concurrentInput.pendingInputBlocks() != 0)
+            std::this_thread::yield();
+        CHECK(concurrentInput.pushHostInput(concurrentSamples.data(), nullptr, block, 1, 99));
+    }
+    inputConsumer.join();
+    CHECK(!inputThreadFailed.load(std::memory_order_relaxed));
+    CHECK(concurrentInput.droppedInputBlockCount() == 0);
+
+    // Exercise the reverse SPSC direction: Worker producer to audio consumer.
+    RvcAudioStreamAdapter concurrentOutput;
+    std::vector<float> workerSamples(block, 0.0f);
+    std::atomic<bool> outputThreadFailed{false};
+    std::thread outputProducer([&]
+    {
+        for (std::uint64_t sequence = 1; sequence <= concurrentBlocks; ++sequence)
+        {
+            const float value = static_cast<float>(sequence) / 256.0f;
+            std::fill(workerSamples.begin(), workerSamples.end(), value);
+            while (concurrentOutput.pendingOutputBlocks() >= RvcAudioStreamAdapter::kQueueCapacity)
+                std::this_thread::yield();
+            if (!concurrentOutput.publishConvertedBlock(workerSamples.data(), block, sequence, 100))
+                outputThreadFailed.store(true, std::memory_order_relaxed);
+        }
+    });
+    std::vector<float> receivedOutput(block);
+    for (std::uint64_t expected = 1; expected <= concurrentBlocks; ++expected)
+    {
+        RvcAudioStreamAdapter::OutputRead read{};
+        while (read.frames == 0)
+        {
+            read = concurrentOutput.pullConvertedOutput(receivedOutput.data(), block, 100);
+            if (read.frames == 0)
+                std::this_thread::yield();
+        }
+        const float expectedSample = static_cast<float>(expected) / 256.0f;
+        CHECK(read.frames == block && read.sequence == expected);
+        for (const auto sample : receivedOutput)
+            CHECK(sample == expectedSample);
+    }
+    outputProducer.join();
+    CHECK(!outputThreadFailed.load(std::memory_order_relaxed));
+    CHECK(concurrentOutput.pendingOutputBlocks() == 0);
+
     return 0;
 }
