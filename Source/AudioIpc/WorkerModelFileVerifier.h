@@ -24,45 +24,51 @@ struct VerifiedModelFiles
 
 inline bool hasNoReparsePathComponents(const std::wstring& path, bool finalIsDirectory) noexcept
 {
-    if (path.size() < 3 || path[1] != L':' || path[2] != L'\\')
+    if (path.size() < 3 || path[1] != L':' || path[2] != L'\\\\')
         return false;
 
-    // Check the drive root, each directory component, and the final object.
-    // FILE_FLAG_OPEN_REPARSE_POINT makes the check inspect the link itself
-    // instead of silently following a junction/symlink to an external target.
-    std::size_t componentEnd = 3;
-    while (componentEnd <= path.size())
+    auto checkObject = [](const std::wstring& objectPath, bool directory) noexcept
     {
-        const bool final = componentEnd == path.size();
-        if (!final && path[componentEnd] != L'\\')
-        {
-            ++componentEnd;
-            continue;
-        }
-
-        const std::wstring component = path.substr(0, componentEnd);
         const DWORD flags = FILE_FLAG_OPEN_REPARSE_POINT |
-                            ((final && !finalIsDirectory) ? 0 : FILE_FLAG_BACKUP_SEMANTICS);
-        HANDLE handle = CreateFileW(component.c_str(), FILE_READ_ATTRIBUTES,
+                            (directory ? FILE_FLAG_BACKUP_SEMANTICS : 0);
+        HANDLE handle = CreateFileW(objectPath.c_str(), FILE_READ_ATTRIBUTES,
             FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr,
             OPEN_EXISTING, flags, nullptr);
         if (handle == INVALID_HANDLE_VALUE)
             return false;
-
         FILE_ATTRIBUTE_TAG_INFO info{};
         const bool queried = GetFileInformationByHandleEx(handle, FileAttributeTagInfo,
             &info, sizeof(info)) != FALSE;
         CloseHandle(handle);
         if (!queried || (info.FileAttributes & FILE_ATTRIBUTE_REPARSE_POINT) != 0)
             return false;
-        if (!final && (info.FileAttributes & FILE_ATTRIBUTE_DIRECTORY) == 0)
-            return false;
+        return directory
+            ? (info.FileAttributes & FILE_ATTRIBUTE_DIRECTORY) != 0
+            : (info.FileAttributes & FILE_ATTRIBUTE_DIRECTORY) == 0;
+    };
 
+    // Check the drive root first, then every ancestor and the final object.
+    std::wstring prefix;
+    try { prefix.assign(path.data(), 3); }
+    catch (...) { return false; }
+    if (!checkObject(prefix, true))
+        return false;
+
+    std::size_t componentStart = 3;
+    while (componentStart < path.size())
+    {
+        const auto separator = path.find(L'\\\\', componentStart);
+        const bool final = separator == std::wstring::npos;
+        const auto componentEnd = final ? path.size() : separator;
+        try { prefix.assign(path.data(), componentEnd); }
+        catch (...) { return false; }
+        if (!checkObject(prefix, final ? finalIsDirectory : true))
+            return false;
         if (final)
-            break;
-        ++componentEnd;
+            return true;
+        componentStart = separator + 1;
     }
-    return true;
+    return false;
 }
 
 inline bool verifyModelFile(const char16_t* path, std::uint16_t pathLength,
