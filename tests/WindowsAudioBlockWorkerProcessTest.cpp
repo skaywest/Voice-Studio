@@ -87,28 +87,57 @@ int wmain(int argc, wchar_t** argv)
     }
 
     auto& input = mapping.get()->slots[kAudioBlockInputSlotBegin];
-    if (!tryBeginAudioBlockWrite(input))
+    auto publishProbeBlock = [&](std::uint64_t sequence, std::uint64_t blockGeneration,
+                                 std::uint64_t deadlineNs) noexcept
+    {
+        if (!tryBeginAudioBlockWrite(input))
+            return false;
+        input.flags = 0;
+        input.sequence = sequence;
+        input.generation = blockGeneration;
+        input.deadlineMonotonicNs = deadlineNs;
+        input.sampleRate = 48000;
+        input.channels = 2;
+        input.frames = 4;
+        input.payloadSamples = 8;
+        const float probe[8] = {-0.75f, -0.5f, -0.25f, 0.0f, 0.125f, 0.25f, 0.5f, 0.875f};
+        for (std::uint32_t i = 0; i < 8; ++i)
+            input.samples[i] = probe[i];
+        return publishAudioBlockWrite(input);
+    };
+
+    // Stale generations and expired deadlines must never reach the output queue.
+    if (!publishProbeBlock(40, generation - 1, monotonicNs() + 5'000'000'000ull))
     {
         worker.shutdown();
         return fail(7);
     }
-
-    input.flags = 0;
-    input.sequence = 42;
-    input.generation = generation;
-    input.deadlineMonotonicNs = monotonicNs() + 5'000'000'000ull;
-    input.sampleRate = 48000;
-    input.channels = 2;
-    input.frames = 4;
-    input.payloadSamples = 8;
-    const float samples[8] = {-0.75f, -0.5f, -0.25f, 0.0f, 0.125f, 0.25f, 0.5f, 0.875f};
-    for (std::uint32_t i = 0; i < 8; ++i)
-        input.samples[i] = samples[i];
-
-    if (!publishAudioBlockWrite(input))
+    Sleep(50);
+    if (input.state != static_cast<LONG>(AudioBlockSlotState::free) ||
+        mapping.get()->slots[kAudioBlockOutputSlotBegin].state != static_cast<LONG>(AudioBlockSlotState::free))
     {
         worker.shutdown();
         return fail(8);
+    }
+
+    if (!publishProbeBlock(41, generation, monotonicNs() - 1))
+    {
+        worker.shutdown();
+        return fail(9);
+    }
+    Sleep(50);
+    if (input.state != static_cast<LONG>(AudioBlockSlotState::free) ||
+        mapping.get()->slots[kAudioBlockOutputSlotBegin].state != static_cast<LONG>(AudioBlockSlotState::free))
+    {
+        worker.shutdown();
+        return fail(10);
+    }
+
+    const float samples[8] = {-0.75f, -0.5f, -0.25f, 0.0f, 0.125f, 0.25f, 0.5f, 0.875f};
+    if (!publishProbeBlock(42, generation, monotonicNs() + 5'000'000'000ull))
+    {
+        worker.shutdown();
+        return fail(11);
     }
 
     bool received = false;
@@ -135,7 +164,7 @@ int wmain(int argc, wchar_t** argv)
     if (!received)
     {
         worker.shutdown();
-        return fail(9);
+        return fail(12);
     }
 
     const auto stop = makeCommand(WorkerCommand::stop, generation, 2);
@@ -146,13 +175,13 @@ int wmain(int argc, wchar_t** argv)
         stopped.requestId != 2)
     {
         worker.shutdown();
-        return fail(10);
+        return fail(13);
     }
 
     if (!worker.terminate() || !worker.hasExited())
-        return fail(11);
+        return fail(14);
     if (!worker.closeAfterExit())
-        return fail(12);
+        return fail(15);
 
     reclaimAudioBlockSlotsAfterWorkerExit(*mapping.get());
     pipe.close();
