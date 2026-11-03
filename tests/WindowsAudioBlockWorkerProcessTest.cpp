@@ -10,7 +10,10 @@
 #include "AudioIpc/WindowsAudioBlockMapping.h"
 #include "AudioIpc/WindowsWorkerControlPipe.h"
 #include "AudioIpc/WindowsWorkerProcess.h"
+#include "AudioIpc/RvcAudioTransportPump.h"
 
+#include <array>
+#include <cmath>
 #include <cstdint>
 #include <cstdio>
 #include <string>
@@ -171,6 +174,87 @@ int wmain(int argc, wchar_t** argv)
     {
         worker.shutdown();
         return fail(12);
+    }
+
+    // Exercise the complete fixed-block RVC transport pump against this real
+    // out-of-process Worker. The Worker still echoes samples; this verifies
+    // framing, sequence ordering, shared-memory ownership and adapter delivery.
+    RvcAudioStreamAdapter rvcAdapter;
+    RvcAudioTransportPump rvcPump(rvcAdapter);
+    std::array<float, RvcAudioStreamAdapter::kBlockFrames> rvcInputA{};
+    std::array<float, RvcAudioStreamAdapter::kBlockFrames> rvcInputB{};
+    std::array<float, RvcAudioStreamAdapter::kBlockFrames> rvcOutput{};
+    for (std::uint32_t i = 0; i < RvcAudioStreamAdapter::kBlockFrames; ++i)
+    {
+        rvcInputA[i] = -0.4f + static_cast<float>(i % 701) * 0.0005f;
+        rvcInputB[i] = 0.35f - static_cast<float>(i % 503) * 0.0004f;
+    }
+    if (!rvcAdapter.pushHostInput(rvcInputA.data(), nullptr,
+            RvcAudioStreamAdapter::kBlockFrames, 1, generation) ||
+        !rvcAdapter.pushHostInput(rvcInputB.data(), nullptr,
+            RvcAudioStreamAdapter::kBlockFrames, 1, generation))
+    {
+        worker.shutdown();
+        return fail(16);
+    }
+
+    auto* sharedRegion = mapping.get();
+    const auto publishTime = monotonicNs();
+    if (rvcPump.publishPendingInput(*sharedRegion, publishTime) != 2 ||
+        rvcPump.pendingWorkerBlocks() != 2)
+    {
+        worker.shutdown();
+        return fail(17);
+    }
+
+    bool bothRvcBlocksReturned = false;
+    const ULONGLONG rvcDeadline = GetTickCount64() + 5000;
+    while (!bothRvcBlocksReturned && GetTickCount64() < rvcDeadline)
+    {
+        rvcPump.collectReadyOutput(*sharedRegion, monotonicNs());
+        bothRvcBlocksReturned = rvcPump.pendingWorkerBlocks() == 0 &&
+                                rvcAdapter.pendingOutputBlocks() == 2;
+        if (!bothRvcBlocksReturned)
+            Sleep(1);
+    }
+    if (!bothRvcBlocksReturned)
+    {
+        worker.shutdown();
+        return fail(18);
+    }
+
+    const auto firstRvcRead = rvcAdapter.pullConvertedOutput(
+        rvcOutput.data(), RvcAudioStreamAdapter::kBlockFrames, generation);
+    if (firstRvcRead.frames != RvcAudioStreamAdapter::kBlockFrames ||
+        firstRvcRead.sequence != 1)
+    {
+        worker.shutdown();
+        return fail(19);
+    }
+    for (std::uint32_t i = 0; i < RvcAudioStreamAdapter::kBlockFrames; ++i)
+    {
+        if (std::abs(rvcOutput[i] - rvcInputA[i]) > 0.000001f)
+        {
+            worker.shutdown();
+            return fail(20);
+        }
+    }
+
+    const auto secondRvcRead = rvcAdapter.pullConvertedOutput(
+        rvcOutput.data(), RvcAudioStreamAdapter::kBlockFrames, generation);
+    if (secondRvcRead.frames != RvcAudioStreamAdapter::kBlockFrames ||
+        secondRvcRead.sequence != 2)
+    {
+        worker.shutdown();
+        return fail(21);
+    }
+    for (std::uint32_t i = 0; i < RvcAudioStreamAdapter::kBlockFrames; ++i)
+    {
+        if (std::abs(rvcOutput[i] - rvcInputB[i]) > 0.000001f)
+        {
+            worker.shutdown();
+            return fail(22);
+        }
     }
 
     const auto stop = makeCommand(WorkerCommand::stop, generation, 2);
