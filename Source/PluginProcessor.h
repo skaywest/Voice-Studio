@@ -1,7 +1,11 @@
 #pragma once
 #include <juce_audio_utils/juce_audio_utils.h>
 #include <juce_dsp/juce_dsp.h>
+#include "AudioIpc/AudioBlockRealtimeAccess.h"
+#include "AudioIpc/AudioBlockRealtimeBridge.h"
 #include <array>
+#include <atomic>
+#include <cstdint>
 
 class VoiceStudioAudioProcessor final : public juce::AudioProcessor
 {
@@ -29,11 +33,24 @@ public:
     using APVTS = juce::AudioProcessorValueTreeState;
     APVTS parameters;
 
+    // Control-thread integration point. Mapping owner must detach before unmapping.
+    voice_studio::ipc::AudioBlockRealtimeAccess& audioRealtimeAccess() noexcept { return realtimeAccess; }
+    void setAiConversionAvailable(bool available, std::uint64_t generation = 0) noexcept;
+    bool isAiConversionAvailable() const noexcept { return aiConversionAvailable.load(std::memory_order_acquire); }
+
 private:
     static APVTS::ParameterLayout createParameterLayout();
     std::array<juce::dsp::IIR::Filter<float>, 2> highPassFilters;
     std::array<juce::dsp::IIR::Filter<float>, 2> presenceFilters;
     std::array<juce::dsp::Compressor<float>, 2> compressors;
     juce::SmoothedValue<float, juce::ValueSmoothingTypes::Linear> outputGainSmoother;
+    voice_studio::ipc::AudioBlockRealtimeAccess realtimeAccess;
+    voice_studio::ipc::AudioBlockRealtimeBridge realtimeBridge;
+    std::atomic<bool> aiConversionAvailable { false };
+    std::atomic<std::uint64_t> aiGeneration { 0 };
+    std::uint32_t preparedSampleRate = 0;
+    std::uint64_t monotonicAnchorNs = 0;
+    std::uint64_t audioFramesProcessed = 0;
+    std::uint64_t nextAudioSequence = 0;
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(VoiceStudioAudioProcessor)
 };

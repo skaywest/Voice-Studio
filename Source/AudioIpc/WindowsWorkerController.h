@@ -24,7 +24,9 @@ namespace voice_studio::ipc
 class WindowsWorkerController final
 {
 public:
-    WindowsWorkerController() = default;
+    WindowsWorkerController() noexcept : realtimeAccess(&ownedRealtimeAccess) {}
+    explicit WindowsWorkerController(AudioBlockRealtimeAccess& externalAccess) noexcept
+        : realtimeAccess(&externalAccess) {}
     WindowsWorkerController(const WindowsWorkerController&) = delete;
     WindowsWorkerController& operator=(const WindowsWorkerController&) = delete;
 
@@ -81,7 +83,7 @@ public:
             !coordinator.acceptStatus(ready))
             return failAndTerminate();
 
-        if (!realtimeAccess.attach(audioMapping.get()))
+        if (!realtimeAccess->attach(audioMapping.get()))
             return failAndTerminate();
 
         return true;
@@ -152,7 +154,7 @@ public:
     // mapping is detached before any controller path unmaps the shared region.
     AudioBlockRealtimeAccess& audioRealtimeAccess() noexcept
     {
-        return realtimeAccess;
+        return *realtimeAccess;
     }
     WorkerLifecycleState currentState() const noexcept
     {
@@ -172,7 +174,7 @@ public:
         if (active)
         {
             coordinator.workerExited();
-            realtimeAccess.detach();
+            realtimeAccess->detach();
             pipe.close();
             process.shutdown();
             audioMapping.close();
@@ -204,7 +206,7 @@ private:
     bool terminateAndFault() noexcept
     {
         coordinator.workerExited();
-        realtimeAccess.detach();
+        realtimeAccess->detach();
         pipe.close();
         audioMapping.close();
         if (process.nativeProcessHandle() != nullptr)
@@ -220,7 +222,7 @@ private:
     void handleWorkerExit() noexcept
     {
         coordinator.workerExited();
-        realtimeAccess.detach();
+        realtimeAccess->detach();
         pipe.close();
         audioMapping.close();
         if (process.hasExited())
@@ -231,7 +233,8 @@ private:
     WorkerControlCoordinator coordinator;
     WindowsWorkerControlPipe pipe;
     WindowsAudioBlockMapping audioMapping;
-    AudioBlockRealtimeAccess realtimeAccess;
+    AudioBlockRealtimeAccess ownedRealtimeAccess;
+    AudioBlockRealtimeAccess* realtimeAccess;
     WindowsWorkerProcess process;
     bool active = false;
 };

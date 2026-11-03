@@ -1,6 +1,32 @@
 #include "PluginProcessor.h"
 #include "PluginEditor.h"
 
+#include <chrono>
+#include <limits>
+
+#if defined(_WIN32)
+ #ifndef WIN32_LEAN_AND_MEAN
+  #define WIN32_LEAN_AND_MEAN
+ #endif
+ #ifndef NOMINMAX
+  #define NOMINMAX
+ # endif
+ #include <windows.h>
+#endif
+
+namespace
+{
+std::uint64_t monotonicNowNs() noexcept
+{
+#if defined(_WIN32)
+    return static_cast<std::uint64_t>(GetTickCount64()) * 1000000ull;
+#else
+    return static_cast<std::uint64_t>(std::chrono::duration_cast<std::chrono::nanoseconds>(
+        std::chrono::steady_clock::now().time_since_epoch()).count());
+#endif
+}
+}
+
 VoiceStudioAudioProcessor::VoiceStudioAudioProcessor()
     : AudioProcessor(BusesProperties()
           .withInput("Input", juce::AudioChannelSet::stereo(), true)
@@ -24,6 +50,10 @@ VoiceStudioAudioProcessor::APVTS::ParameterLayout VoiceStudioAudioProcessor::cre
 
 void VoiceStudioAudioProcessor::prepareToPlay(double sampleRate, int samplesPerBlock)
 {
+    preparedSampleRate = static_cast<std::uint32_t>(juce::jlimit(8000.0, 192000.0, sampleRate));
+    monotonicAnchorNs = monotonicNowNs();
+    audioFramesProcessed = 0;
+    nextAudioSequence = 0;
     juce::dsp::ProcessSpec spec;
     spec.sampleRate = sampleRate;
     spec.maximumBlockSize = static_cast<juce::uint32>(juce::jmax(1, samplesPerBlock));
@@ -66,6 +96,37 @@ void VoiceStudioAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, j
 {
     juce::ScopedNoDenormals guard;
     const int channels = juce::jmin(buffer.getNumChannels(), 2);
+    const auto frames = static_cast<std::uint32_t>(juce::jmax(0, buffer.getNumSamples()));
+
+    // AI transport is opt-in and requires explicit READY/PROCESSING confirmation.
+    // This callback never starts processes, performs IPC, allocates, or waits.
+    if (parameters.getRawParameterValue("aiEnabled")->load() > 0.5f &&
+        aiConversionAvailable.load(std::memory_order_acquire) &&
+        preparedSampleRate >= 8000 && preparedSampleRate <= 192000 &&
+        frames > 0 && frames <= voice_studio::ipc::kAudioBlockMaxFrames &&
+        channels >= 1 && isRealtime())
+    {
+        const auto generation = aiGeneration.load(std::memory_order_acquire);
+        if (generation != 0)
+        {
+            const auto wholeSeconds = audioFramesProcessed / preparedSampleRate;
+            const auto remainderFrames = audioFramesProcessed % preparedSampleRate;
+            const auto elapsedNs = wholeSeconds * 1000000000ull +
+                (remainderFrames * 1000000000ull) / preparedSampleRate;
+            const auto nowNs = monotonicAnchorNs + elapsedNs;
+            const auto maxNs = (std::numeric_limits<std::uint64_t>::max)();
+            const auto deadlineNs = nowNs <= maxNs - 100000000ull
+                ? nowNs + 100000000ull : maxNs;
+            const auto sequence = ++nextAudioSequence;
+            const auto expectedSequence = sequence > 1 ? sequence - 1 : 0;
+            realtimeBridge.process(realtimeAccess,
+                buffer.getReadPointer(0), channels > 1 ? buffer.getReadPointer(1) : nullptr,
+                buffer.getWritePointer(0), channels > 1 ? buffer.getWritePointer(1) : nullptr,
+                frames, static_cast<std::uint32_t>(channels), preparedSampleRate,
+                sequence, expectedSequence, generation, deadlineNs, nowNs);
+        }
+    }
+    audioFramesProcessed += frames;
 
     if (!parameters.getRawParameterValue("dspEnabled")->load())
     {
@@ -128,4 +189,18 @@ void VoiceStudioAudioProcessor::setStateInformation(const void* data, int size)
 juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
 {
     return new VoiceStudioAudioProcessor();
+}
+
+void VoiceStudioAudioProcessor::setAiConversionAvailable(bool available, std::uint64_t generation) noexcept
+{
+    if (!available || generation == 0)
+    {
+        aiConversionAvailable.store(false, std::memory_order_release);
+        aiGeneration.store(0, std::memory_order_release);
+        return;
+    }
+
+    // Publish generation before availability.
+    aiGeneration.store(generation, std::memory_order_release);
+    aiConversionAvailable.store(true, std::memory_order_release);
 }

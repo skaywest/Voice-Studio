@@ -34,6 +34,8 @@ int main()
            "AI is disabled by default");
     expect(processor.parameters.getRawParameterValue("dspEnabled")->load() > 0.5f,
            "DSP is enabled by default");
+    expect(!processor.isAiConversionAvailable(),
+           "AI conversion is unavailable until a Worker confirms processing");
     expect(processor.parameters.getRawParameterValue("highPass")->load() > 0.5f,
            "high-pass is enabled by default");
     expect(processor.parameters.getRawParameterValue("presence")->load() > 0.5f,
@@ -60,6 +62,32 @@ int main()
         for (int sample = 0; sample < buffer.getNumSamples(); ++sample)
             unchanged = unchanged && buffer.getSample(channel, sample) == dryReference.getSample(channel, sample);
     expect(unchanged, "disabled DSP passes audio through unchanged");
+
+    // Merely requesting AI must never activate an uninitialised Worker.
+    setParameter(processor, "aiEnabled", 1.0f);
+    processor.setAiConversionAvailable(false);
+    juce::AudioBuffer<float> aiFallback(buffer);
+    juce::AudioBuffer<float> aiFallbackReference(buffer);
+    processor.processBlock(aiFallback, midi);
+    bool aiFallbackDry = true;
+    for (int channel = 0; channel < aiFallback.getNumChannels(); ++channel)
+        for (int sample = 0; sample < aiFallback.getNumSamples(); ++sample)
+            aiFallbackDry = aiFallbackDry && aiFallback.getSample(channel, sample) ==
+                aiFallbackReference.getSample(channel, sample);
+    expect(aiFallbackDry, "AI request without confirmed Worker processing remains dry");
+
+    // An availability flag without a mapped region must also fall back safely.
+    processor.setAiConversionAvailable(true, 7);
+    juce::AudioBuffer<float> missingMapping(buffer);
+    juce::AudioBuffer<float> missingMappingReference(buffer);
+    processor.processBlock(missingMapping, midi);
+    bool missingMappingDry = true;
+    for (int channel = 0; channel < missingMapping.getNumChannels(); ++channel)
+        for (int sample = 0; sample < missingMapping.getNumSamples(); ++sample)
+            missingMappingDry = missingMappingDry && missingMapping.getSample(channel, sample) ==
+                missingMappingReference.getSample(channel, sample);
+    expect(missingMappingDry, "missing realtime mapping safely falls back to dry audio");
+    processor.setAiConversionAvailable(false);
 
     setParameter(processor, "dspEnabled", 1.0f);
     processor.processBlock(buffer, midi);
