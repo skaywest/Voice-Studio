@@ -63,7 +63,7 @@ class PreflightTests(unittest.TestCase):
             python.write_bytes(b"fake")
             runner = FakeRunner()
             report = run_preflight(python, root, runner=runner)
-            self.assertIn(str(root / "configs/v2/48k.json"), report["missing_files"])
+            self.assertIn(str((root / "configs/v2/48k.json").resolve()), report["missing_files"])
             self.assertFalse(report["runtime_probe"]["started"])
             self.assertEqual(runner.calls, [])
 
