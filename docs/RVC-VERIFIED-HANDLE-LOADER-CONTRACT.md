@@ -72,3 +72,52 @@ policy. Do not execute an unverified path after checking a different handle.
 This contract does not implement or claim RVC inference, CUDA support, a model
 download, or training. AI remains unavailable until the backend and its
 runtime/model combination pass the tests above on Windows.
+
+
+## Concrete upstream RVC source audit (2026-11-04)
+
+The inspected upstream `RVCRealtimeVST/worker/rvc_worker.py` and
+`infer/rtrvc.py` confirm that the current adapter boundary is path-based:
+
+- `RVCStreamEngine.__init__` resolves `model_path` and `index_path` to
+  strings and passes them to `infer.rtrvc.RVC`.
+- `infer.rtrvc.get_synthesizer` calls
+  `torch.load(pth_path, map_location=torch.device("cpu"))`.
+- `RVC.__init__` calls `faiss.read_index(index_path)` when index search
+  is enabled.
+- `RVC.change_index_rate` may call `faiss.read_index(self.index_path)`
+  later when index search is enabled after startup. Verifying only the
+  initial read would therefore be insufficient.
+- The worker also loads HuBERT from the RVC checkout's
+  `assets/hubert_base` directory through Transformers
+  `from_pretrained(path, local_files_only=True)`.
+- RMVPE is loaded lazily from `assets/rmvpe/rmvpe.pt` when that F0 method
+  is first selected.
+
+Consequences for this project:
+
+1. Direct verified-handle integration with the inspected upstream RVC
+   implementation is **not currently established**. The checkpoint and FAISS
+   index are explicitly reopened by path; the index can be reopened later.
+2. A staging-copy design must include the entrypoint, checkpoint, optional
+   index, and every runtime asset actually selected (including HuBERT and
+   RMVPE when used). The staged tree needs a private ACL, independent hashes,
+   no user-writable replacement path, and a lifetime extending until backend
+   unload. Any lazily loaded asset must be staged and verified before the
+   method is enabled, or loaded through a separately verified read-only
+   mechanism.
+3. The current model manifest/ABI covers entrypoint, `.pth`, and optional
+   `.index` only. It does **not** yet authenticate the complete RVC source
+   tree, Python runtime, package set, HuBERT assets, RMVPE assets, or other
+   optional F0 assets. It must not be described as a complete trusted-runtime
+   manifest.
+4. The selected RVC source is executable Python. User confirmation of source
+   trust remains necessary, but is not a substitute for staging integrity or
+   process isolation.
+5. Before enabling inference, add tests that prove the backend never reads
+   original selected paths after staging, verify hashes for all staged files,
+   and exercise a late index activation and each supported F0 model load.
+
+The repository's current Worker remains a protocol/audio echo Worker:
+`start` is unsupported. No RVC code is executed, no checkpoint is
+deserialized, and no GPU inference is claimed by this audit.
