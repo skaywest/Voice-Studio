@@ -7,6 +7,11 @@ using namespace voice_studio::ipc;
 
 int wmain()
 {
+    if (!isContainedFinalPath(L"\\\\?\\C:\\", L"\\\\?\\C:\\model.pth") ||
+        !isContainedFinalPath(L"\\\\?\\C:\\models\\", L"\\\\?\\C:\\models\\voice.pth") ||
+        isContainedFinalPath(L"\\\\?\\C:\\models", L"\\\\?\\C:\\models-old\\voice.pth") ||
+        isContainedFinalPath(L"\\\\?\\C:\\models", L"\\\\?\\D:\\models\\voice.pth")) return 10;
+
     wchar_t tempPath[MAX_PATH]{}, filePath[MAX_PATH]{};
     if (GetTempPathW(MAX_PATH, tempPath) == 0 ||
         GetTempFileNameW(tempPath, L"vsm", 0, filePath) == 0) return 1;

@@ -71,8 +71,10 @@ inline bool isContainedFinalPath(const std::wstring& root,
     if (CompareStringOrdinal(root.data(), static_cast<int>(root.size()),
                              candidate.data(), static_cast<int>(root.size()), TRUE) != CSTR_EQUAL)
         return false;
-    const wchar_t boundary = root.back() == L'\\' ? candidate[root.size()] : candidate[root.size()];
-    return boundary == L'\\';
+    // A root ending in a separator already establishes the component boundary
+    // (for example, a volume root such as \\\\?\\C:\\). Otherwise the next
+    // candidate character must be a separator, not a sibling-name prefix.
+    return root.back() == L'\\\\' || candidate[root.size()] == L'\\\\';
 }
 
 inline bool openVerifiedFile(const char16_t* path, std::uint16_t pathLength,
@@ -185,11 +187,11 @@ inline bool verifyModelFile(const char16_t* path, std::uint16_t pathLength,
         FILE_FLAG_OPEN_REPARSE_POINT, nullptr);
     if (root == INVALID_HANDLE_VALUE) return false;
     FILE_ATTRIBUTE_TAG_INFO info{};
-    std::wstring canonicalRoot, parent;
+    std::wstring canonicalRoot;
     const bool valid = GetFileInformationByHandleEx(root, FileAttributeTagInfo, &info, sizeof(info)) &&
         (info.FileAttributes & FILE_ATTRIBUTE_REPARSE_POINT) == 0 &&
         (info.FileAttributes & FILE_ATTRIBUTE_DIRECTORY) != 0 &&
-        finalPath(root, canonicalRoot) && finalPath(root, parent);
+        finalPath(root, canonicalRoot);
     HANDLE held = INVALID_HANDLE_VALUE;
     const bool result = valid && openVerifiedFile(path, pathLength, expectedSize,
         expectedHash, canonicalRoot, held);
