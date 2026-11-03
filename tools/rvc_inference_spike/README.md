@@ -1,8 +1,11 @@
 # RVC Inference Preflight
 
 This tool checks a separately supplied RVC source checkout and its Python
-runtime. It does not install packages, access the network, download models,
-load a checkpoint, or perform voice conversion.
+runtime. The adjacent `model_selection.py` validates explicit user selections
+and creates a SHA-256 manifest for the RVC worker entrypoint, model checkpoint,
+and optional index. It requires explicit trust and voice-rights confirmations.
+Neither tool installs packages, accesses the network, downloads models,
+executes RVC code, deserializes a checkpoint, or performs voice conversion.
 
 ## Why this stage exists
 
@@ -54,3 +57,18 @@ latency. Those require a compatible licensed model and a separate benchmark.
 ## Offline unit tests
 
     python -m unittest -v
+
+## Explicit model/source selection manifest
+
+The offline helper `model_selection.py` is a preparation step for a future
+Worker launch. It requires both `trust_rvc_source=True` and
+`confirm_voice_rights=True`, checks the selected RVC worker entrypoint is
+inside the chosen source directory, validates non-empty `.pth` / optional
+`.index` files, and fingerprints them with streaming SHA-256. Its verifier
+detects changed files before a later activation step.
+
+This is not a sandbox or a proof that an RVC checkout is safe. The selected
+RVC checkout contains executable Python and must be trusted by the user;
+checkpoints may use pickle-based formats and are not deserialized here. The
+manifest is not yet connected to the native Worker or a UI. No files are
+launched or loaded by this helper.
