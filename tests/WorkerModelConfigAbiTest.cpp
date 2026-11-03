@@ -26,6 +26,10 @@ int main() {
     x = m; x.entrypointSha256[0] = 0; assert(!hasValidWorkerModelConfig(x));
     x = m; x.entrypointPath[m.entrypointPathLength - 1] = u'x'; assert(!hasValidWorkerModelConfig(x));
     x = m; setPath(x.modelPath, x.modelPathLength, u"D:\\Voices\\..\\voice.pth"); assert(!hasValidWorkerModelConfig(x));
+    x = m; setPath(x.modelPath, x.modelPathLength, u"D:\\Voices\\.."); assert(!hasValidWorkerModelConfig(x));
+    x = m; setPath(x.modelPath, x.modelPathLength, u"D:\\Voices\\."); assert(!hasValidWorkerModelConfig(x));
+    x = m; setPath(x.modelPath, x.modelPathLength, u"D:\\\\Voices\\voice.pth"); assert(!hasValidWorkerModelConfig(x));
+    x = m; x.modelSizeBytes = kWorkerModelMaxDataFileBytes + 1; assert(!hasValidWorkerModelConfig(x));
     x = m; setPath(x.modelPath, x.modelPathLength, u"\\\\server\\share\\voice.pth"); assert(!hasValidWorkerModelConfig(x));
     x = m; setPath(x.modelPath, x.modelPathLength, u"D:\\Voices\\voice.exe"); assert(!hasValidWorkerModelConfig(x));
     x = m; x.indexPathLength = 1; assert(!hasValidWorkerModelConfig(x));

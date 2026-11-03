@@ -6,6 +6,8 @@ inline constexpr std::uint32_t kWorkerModelConfigMagic = 0x56534d31u;
 inline constexpr std::uint16_t kWorkerModelConfigVersion = 1;
 inline constexpr std::uint32_t kWorkerModelConfigManifestVersion = 1;
 inline constexpr std::size_t kWorkerModelPathCapacity = 1024;
+inline constexpr std::uint64_t kWorkerModelMaxEntrypointBytes = 64ull * 1024ull * 1024ull;
+inline constexpr std::uint64_t kWorkerModelMaxDataFileBytes = 8ull * 1024ull * 1024ull * 1024ull;
 inline constexpr std::uint32_t kWorkerModelConfigFlagSourceTrusted = 1u << 0;
 inline constexpr std::uint32_t kWorkerModelConfigFlagVoiceRightsConfirmed = 1u << 1;
 inline constexpr std::uint32_t kWorkerModelConfigFlagHasIndex = 1u << 2;
@@ -56,6 +58,7 @@ inline bool hasSafeLocalAbsoluteWindowsPath(const char16_t* path, std::uint16_t 
             ch == u'"' || ch == u'|' || ch == u'?' || ch == u'*') return false;
         if (ch == u':' && i != 1) return false;
         if (ch == u'\\' && i > 2) {
+            if (path[i - 1] == u'\\') return false;
             std::size_t start = i;
             while (start > 0 && path[start - 1] != u'\\') --start;
             const auto n = i - start;
@@ -63,6 +66,11 @@ inline bool hasSafeLocalAbsoluteWindowsPath(const char16_t* path, std::uint16_t 
                 (n == 2 && path[start] == u'.' && path[start + 1] == u'.')) return false;
         }
     }
+    std::size_t finalStart = length;
+    while (finalStart > 0 && path[finalStart - 1] != u'\\') --finalStart;
+    const auto finalLength = static_cast<std::size_t>(length) - finalStart;
+    if ((finalLength == 1 && path[finalStart] == u'.') ||
+        (finalLength == 2 && path[finalStart] == u'.' && path[finalStart + 1] == u'.')) return false;
     return path[length - 1] != u'\\' && path[length] == 0;
 }
 inline bool hasExpectedRvcEntrypoint(const WorkerModelConfigMessage& m) noexcept {
@@ -91,7 +99,8 @@ inline bool hasValidWorkerModelConfig(const WorkerModelConfigMessage& m) noexcep
         m.requestId == 0 || m.reserved != 0 || (m.flags & ~kWorkerModelConfigKnownFlags) != 0 ||
         (m.flags & (kWorkerModelConfigFlagSourceTrusted | kWorkerModelConfigFlagVoiceRightsConfirmed)) !=
             (kWorkerModelConfigFlagSourceTrusted | kWorkerModelConfigFlagVoiceRightsConfirmed) ||
-        m.entrypointSizeBytes == 0 || m.modelSizeBytes == 0 ||
+        m.entrypointSizeBytes == 0 || m.entrypointSizeBytes > kWorkerModelMaxEntrypointBytes ||
+        m.modelSizeBytes == 0 || m.modelSizeBytes > kWorkerModelMaxDataFileBytes ||
         !modelConfigHashPresent(m.entrypointSha256) || !modelConfigHashPresent(m.modelSha256)) return false;
     if (!hasSafeLocalAbsoluteWindowsPath(m.rootPath, m.rootPathLength) ||
         !hasSafeLocalAbsoluteWindowsPath(m.entrypointPath, m.entrypointPathLength) ||
@@ -102,7 +111,8 @@ inline bool hasValidWorkerModelConfig(const WorkerModelConfigMessage& m) noexcep
     if (hasIndex) {
         if (!hasSafeLocalAbsoluteWindowsPath(m.indexPath, m.indexPathLength) ||
             !hasModelConfigExtension(m.indexPath, m.indexPathLength, u".index", 6) ||
-            m.indexSizeBytes == 0 || !modelConfigHashPresent(m.indexSha256)) return false;
+            m.indexSizeBytes == 0 || m.indexSizeBytes > kWorkerModelMaxDataFileBytes ||
+            !modelConfigHashPresent(m.indexSha256)) return false;
     } else {
         if (m.indexPathLength != 0 || m.indexSizeBytes != 0 || m.indexPath[0] != 0) return false;
         for (const auto byte : m.indexSha256) if (byte != 0) return false;
