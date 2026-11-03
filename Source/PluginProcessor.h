@@ -2,7 +2,10 @@
 #include <juce_audio_utils/juce_audio_utils.h>
 #include <juce_dsp/juce_dsp.h>
 #include "AudioIpc/AudioBlockRealtimeAccess.h"
-#include "AudioIpc/AudioBlockRealtimeBridge.h"
+#include "AudioIpc/RvcAudioStreamAdapter.h"
+#if defined(_WIN32)
+ #include "AudioIpc/RvcAudioTransportPump.h"
+#endif
 #if defined(_WIN32)
  #include "AudioIpc/WindowsWorkerController.h"
 #endif
@@ -76,12 +79,13 @@ private:
     std::atomic<bool> workerUiRunning { false };
     std::atomic<int> workerUiState { static_cast<int>(voice_studio::ipc::WorkerLifecycleState::disabled) };
 #endif
-    voice_studio::ipc::AudioBlockRealtimeBridge realtimeBridge;
+    voice_studio::ipc::RvcAudioStreamAdapter rvcAudioStream;
+#if defined(_WIN32)
+    voice_studio::ipc::RvcAudioTransportPump rvcAudioPump { rvcAudioStream };
+    std::array<float, voice_studio::ipc::RvcAudioStreamAdapter::kMaxHostCallbackFrames> rvcOutputScratch{};
+#endif
     std::atomic<bool> aiConversionAvailable { false };
     std::atomic<std::uint64_t> aiGeneration { 0 };
     std::uint32_t preparedSampleRate = 0;
-    std::uint64_t monotonicAnchorNs = 0;
-    std::uint64_t audioFramesProcessed = 0;
-    std::uint64_t nextAudioSequence = 0;
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(VoiceStudioAudioProcessor)
 };

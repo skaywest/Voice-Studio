@@ -63,5 +63,20 @@ int main()
     CHECK(pump.pendingWorkerBlocks() == 0 && pump.expiredOutputBlockCount() == 1);
     pump.resetForNewWorkerGeneration();
     CHECK(pump.pendingWorkerBlocks() == 0);
+
+    // A newly launched Worker generation must never receive queued audio
+    // captured by the previous generation.
+    AudioBlockRegion staleRegion{}; initialise(staleRegion);
+    RvcAudioStreamAdapter staleAdapter;
+    RvcAudioTransportPump stalePump(staleAdapter);
+    CHECK(staleAdapter.pushHostInput(input.data(), nullptr,
+        RvcAudioStreamAdapter::kBlockFrames, 1, 8));
+    CHECK(stalePump.publishPendingInput(staleRegion, 3'000'000'000ull,
+        RvcAudioTransportPump::kDefaultDeadlineBudgetNs, 9) == 0);
+    CHECK(stalePump.pendingWorkerBlocks() == 0);
+    CHECK(stalePump.droppedInputBlockCount() == 1);
+    for (std::uint32_t i = kAudioBlockInputSlotBegin;
+         i < kAudioBlockInputSlotBegin + kAudioBlockInputSlotCount; ++i)
+        CHECK(staleRegion.slots[i].state == static_cast<LONG>(AudioBlockSlotState::free));
     return 0;
 }

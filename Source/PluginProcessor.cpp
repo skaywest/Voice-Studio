@@ -2,7 +2,6 @@
 #include "PluginEditor.h"
 
 #include <chrono>
-#include <limits>
 #include <utility>
 
 #if defined(_WIN32)
@@ -81,8 +80,6 @@ void VoiceStudioAudioProcessor::prepareToPlay(double sampleRate, int samplesPerB
     // Reject unsupported host rates rather than silently relabelling their audio as 8/192 kHz.
     preparedSampleRate = sampleRate >= 8000.0 && sampleRate <= 192000.0
         ? static_cast<std::uint32_t>(sampleRate) : 0u;
-    monotonicAnchorNs = monotonicNowNs();
-    audioFramesProcessed = 0;
     // Keep the sequence monotonic across host re-prepare cycles. A Worker/mapping
     // session may outlive prepareToPlay(), so resetting could make stale output match.
     juce::dsp::ProcessSpec spec;
@@ -129,35 +126,30 @@ void VoiceStudioAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, j
     const int channels = juce::jmin(buffer.getNumChannels(), 2);
     const auto frames = static_cast<std::uint32_t>(juce::jmax(0, buffer.getNumSamples()));
 
-    // AI transport is opt-in and requires explicit READY/PROCESSING confirmation.
-    // This callback never starts processes, performs IPC, allocates, or waits.
+#if defined(_WIN32)
+    // AI is opt-in and only consumes the fixed 48 kHz RVC stream profile.
+    // The callback performs bounded copies/queue operations only. If a block
+    // is not ready, the untouched host signal remains the dry fallback.
     if (parameters.getRawParameterValue("aiEnabled")->load() > 0.5f &&
         aiConversionAvailable.load(std::memory_order_acquire) &&
-        preparedSampleRate >= 8000 && preparedSampleRate <= 192000 &&
-        frames > 0 && frames <= voice_studio::ipc::kAudioBlockMaxFrames &&
+        preparedSampleRate == voice_studio::ipc::RvcAudioTransportPump::kSampleRate &&
+        frames > 0 && frames <= voice_studio::ipc::RvcAudioStreamAdapter::kMaxHostCallbackFrames &&
         channels >= 1 && isRealtime() == juce::AudioProcessor::Realtime::yes)
     {
         const auto generation = aiGeneration.load(std::memory_order_acquire);
-        if (generation != 0)
+        if (generation != 0 &&
+            rvcAudioStream.pushHostInput(buffer.getReadPointer(0),
+                channels > 1 ? buffer.getReadPointer(1) : nullptr,
+                frames, static_cast<std::uint32_t>(channels), generation))
         {
-            const auto wholeSeconds = audioFramesProcessed / preparedSampleRate;
-            const auto remainderFrames = audioFramesProcessed % preparedSampleRate;
-            const auto elapsedNs = wholeSeconds * 1000000000ull +
-                (remainderFrames * 1000000000ull) / preparedSampleRate;
-            const auto nowNs = monotonicAnchorNs + elapsedNs;
-            const auto maxNs = (std::numeric_limits<std::uint64_t>::max)();
-            const auto deadlineNs = nowNs <= maxNs - 100000000ull
-                ? nowNs + 100000000ull : maxNs;
-            const auto sequence = ++nextAudioSequence;
-            const auto expectedSequence = sequence > 1 ? sequence - 1 : 0;
-            realtimeBridge.process(realtimeAccess,
-                buffer.getReadPointer(0), channels > 1 ? buffer.getReadPointer(1) : nullptr,
-                buffer.getWritePointer(0), channels > 1 ? buffer.getWritePointer(1) : nullptr,
-                frames, static_cast<std::uint32_t>(channels), preparedSampleRate,
-                sequence, expectedSequence, generation, deadlineNs, nowNs);
+            const auto converted = rvcOutputScratch.data();
+            const auto read = rvcAudioStream.pullConvertedOutput(converted, frames, generation);
+            for (std::uint32_t i = 0; i < read.frames; ++i)
+                for (int ch = 0; ch < channels; ++ch)
+                    buffer.setSample(ch, static_cast<int>(i), converted[i]);
         }
     }
-    audioFramesProcessed += frames;
+#endif
 
     if (!parameters.getRawParameterValue("dspEnabled")->load())
     {
@@ -257,6 +249,9 @@ void VoiceStudioAudioProcessor::stopWorker() noexcept
 void VoiceStudioAudioProcessor::publishWorkerSnapshot() noexcept
 {
 #if defined(_WIN32)
+    setAiConversionAvailable(workerController.audioConversionAvailable(),
+                             workerController.audioConversionAvailable()
+                                 ? workerController.generation() : 0);
     const auto state = workerController.currentState();
     workerUiState.store(static_cast<int>(state), std::memory_order_release);
     const bool running = state != voice_studio::ipc::WorkerLifecycleState::disabled &&
@@ -306,6 +301,8 @@ void VoiceStudioAudioProcessor::workerControlLoop() noexcept
             std::to_wstring(GetCurrentProcessId()) + L"-" + std::to_wstring(pipeId);
 
         const bool launched = workerController.launch(executablePath, pipeName, monotonicNowNs(), 5000);
+        rvcAudioPump.resetForNewWorkerGeneration();
+        setAiConversionAvailable(false);
         publishWorkerSnapshot();
 
         if (launched)
@@ -318,8 +315,34 @@ void VoiceStudioAudioProcessor::workerControlLoop() noexcept
                         break;
                 }
 
-                workerController.pollStatus(50);
+                const auto nowNs = monotonicNowNs();
+                const auto stateBeforeCommand = workerController.currentState();
+                const bool wantsAi = parameters.getRawParameterValue("aiEnabled")->load() > 0.5f;
+                if (wantsAi &&
+                    (stateBeforeCommand == voice_studio::ipc::WorkerLifecycleState::ready ||
+                     stateBeforeCommand == voice_studio::ipc::WorkerLifecycleState::coolingDown))
+                    workerController.enableAi(3000);
+                else if (!wantsAi &&
+                         (stateBeforeCommand == voice_studio::ipc::WorkerLifecycleState::enabling ||
+                          stateBeforeCommand == voice_studio::ipc::WorkerLifecycleState::running))
+                    workerController.disableAi(nowNs, 3000);
+
+                workerController.pollStatus(5);
                 workerController.tick(monotonicNowNs(), 1000);
+
+                if (workerController.audioConversionAvailable())
+                {
+                    auto audioAccess = workerController.audioRealtimeAccess().tryAcquire();
+                    if (audioAccess)
+                    {
+                        const auto pumpTimeNs = monotonicNowNs();
+                        rvcAudioPump.collectReadyOutput(*audioAccess, pumpTimeNs);
+                        rvcAudioPump.publishPendingInput(*audioAccess, pumpTimeNs,
+                            voice_studio::ipc::RvcAudioTransportPump::kDefaultDeadlineBudgetNs,
+                            workerController.generation());
+                    }
+                }
+
                 publishWorkerSnapshot();
 
                 const auto state = workerController.currentState();
@@ -353,6 +376,8 @@ void VoiceStudioAudioProcessor::workerControlLoop() noexcept
     }
 
     workerController.shutdown();
+    rvcAudioPump.resetForNewWorkerGeneration();
+    setAiConversionAvailable(false);
     workerUiRunning.store(false, std::memory_order_release);
     workerUiState.store(static_cast<int>(voice_studio::ipc::WorkerLifecycleState::disabled),
                         std::memory_order_release);

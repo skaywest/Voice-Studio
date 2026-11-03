@@ -24,7 +24,8 @@ public:
     // Control-thread only. Audio thread produces adapter input; this pump
     // transfers complete mono RVC blocks into the shared-memory input slots.
     std::uint32_t publishPendingInput(AudioBlockRegion& region, std::uint64_t nowNs,
-        std::uint64_t deadlineBudgetNs = kDefaultDeadlineBudgetNs) noexcept
+        std::uint64_t deadlineBudgetNs = kDefaultDeadlineBudgetNs,
+        std::uint64_t expectedGeneration = 0) noexcept
     {
         if (nowNs == 0 || deadlineBudgetNs == 0)
             return 0;
@@ -34,6 +35,11 @@ public:
             RvcAudioStreamAdapter::InputBlock block{};
             if (!stream.tryPopInputBlock(block))
                 break;
+            if (expectedGeneration != 0 && block.generation != expectedGeneration)
+            {
+                droppedInput.fetch_add(1, std::memory_order_relaxed);
+                continue;
+            }
             const auto maxNs = (std::numeric_limits<std::uint64_t>::max)();
             const auto deadline = nowNs > maxNs - deadlineBudgetNs ? maxNs : nowNs + deadlineBudgetNs;
             if (!tryPublishInputAudioBlock(region, block.samples.data(),
