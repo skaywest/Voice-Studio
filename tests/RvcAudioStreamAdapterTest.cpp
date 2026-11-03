@@ -32,7 +32,8 @@ int main()
     CHECK(!adapter.tryPopInputBlock(input));
 
     // Mono input also works, and a generation change discards partial old audio.
-    std::vector<float> mono(1200, 0.75f);
+    // The backing buffer must cover the largest frame count passed below.
+    std::vector<float> mono(1880, 0.75f);
     CHECK(adapter.pushHostInput(mono.data(), nullptr, 1200, 1, 1));
     CHECK(adapter.pushHostInput(mono.data(), nullptr, 1000, 1, 2));
     CHECK(adapter.pushHostInput(mono.data(), nullptr, 1880, 1, 2));
@@ -91,7 +92,6 @@ int main()
     auto fresh = output.pullConvertedOutput(first.data(), 128, 8);
     CHECK(fresh.frames == 128 && fresh.sequence == 13);
     CHECK(output.discardedStaleOutputBlockCount() == 1);
-
 
     // Switching generation while an output block is only partially consumed
     // must discard its remainder instead of leaking old voice audio.
