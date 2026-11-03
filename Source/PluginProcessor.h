@@ -89,6 +89,7 @@ private:
     std::atomic<bool> aiConversionAvailable { false };
     std::atomic<std::uint64_t> aiGeneration { 0 };
     std::atomic<std::uint64_t> aiSessionGeneration { 1 };
+    std::atomic<bool> aiParameterEnabled { false };
     std::uint32_t preparedSampleRate = 0;
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(VoiceStudioAudioProcessor)
 };

@@ -443,7 +443,12 @@ juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
 
 void VoiceStudioAudioProcessor::parameterChanged(const juce::String& parameterID, float newValue)
 {
-    if (parameterID == "aiEnabled" && newValue > 0.5f)
+    if (parameterID != "aiEnabled")
+        return;
+
+    const bool enabled = newValue > 0.5f;
+    const bool wasEnabled = aiParameterEnabled.exchange(enabled, std::memory_order_acq_rel);
+    if (enabled && !wasEnabled)
         aiSessionGeneration.fetch_add(1, std::memory_order_acq_rel);
 }
 
