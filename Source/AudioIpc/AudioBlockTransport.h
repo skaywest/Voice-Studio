@@ -4,6 +4,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <limits>
 
 namespace voice_studio::ipc
 {
@@ -31,7 +32,7 @@ inline bool tryPublishInputAudioBlock(AudioBlockRegion& region,
     for (std::uint32_t i = 0; i < sampleCount; ++i)
     {
         const float sample = interleavedSamples[i];
-        if (!(sample <= 3.402823466e+38F && sample >= -3.402823466e+38F))
+        if (!(sample <= (std::numeric_limits<float>::max)() && sample >= -(std::numeric_limits<float>::max)()))
             return false;
     }
 
