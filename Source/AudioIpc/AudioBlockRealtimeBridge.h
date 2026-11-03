@@ -8,10 +8,6 @@
 
 namespace voice_studio::ipc
 {
-// One instance per plugin processor. The fixed scratch buffer is allocated as
-// part of the processor, never by process(). Call only from the audio thread.
-// The caller supplies the output sequence expected for this callback (normally
-// the preceding input block); missing/late AI output leaves the dry copy intact.
 struct AudioBlockRealtimeResult
 {
     bool mappingAvailable = false;
@@ -26,6 +22,10 @@ public:
     AudioBlockRealtimeBridge(const AudioBlockRealtimeBridge&) = delete;
     AudioBlockRealtimeBridge& operator=(const AudioBlockRealtimeBridge&) = delete;
 
+    // One instance per processor. Call only from the audio thread. Input is
+    // snapshotted before touching output because JUCE commonly aliases them.
+    // Publish current input before consuming prior output so in-place buffers
+    // cannot accidentally feed converted output back into the Worker.
     AudioBlockRealtimeResult process(AudioBlockRealtimeAccess& access,
                                      const float* inputLeft,
                                      const float* inputRight,
@@ -47,12 +47,19 @@ public:
             frames > kAudioBlockMaxFrames)
             return result;
 
-        // Fail-safe first: every invalid/missing/late Worker result leaves dry audio.
+        // Preserve original input before writing dry output: input/output may alias.
         for (std::uint32_t frame = 0; frame < frames; ++frame)
         {
-            outputLeft[frame] = inputLeft[frame];
+            scratch[frame * channels] = inputLeft[frame];
             if (channels == 2)
-                outputRight[frame] = inputRight[frame];
+                scratch[frame * channels + 1] = inputRight[frame];
+        }
+
+        for (std::uint32_t frame = 0; frame < frames; ++frame)
+        {
+            outputLeft[frame] = scratch[frame * channels];
+            if (channels == 2)
+                outputRight[frame] = scratch[frame * channels + 1];
         }
 
         auto lease = access.tryAcquire();
@@ -61,6 +68,12 @@ public:
 
         result.mappingAvailable = true;
         auto& region = *lease;
+
+        // Publish this callback's untouched input first. The Worker may return
+        // it later; sequence matching preserves future output for its callback.
+        result.inputPublished = tryPublishInputAudioBlock(
+            region, scratch.data(), frames, channels, sampleRate,
+            inputSequence, generation, deadlineMonotonicNs);
 
         if (expectedOutputSequence != 0 &&
             tryConsumeOutputAudioBlock(region, scratch.data(), scratch.size(),
@@ -77,16 +90,6 @@ public:
             result.outputApplied = true;
         }
 
-        for (std::uint32_t frame = 0; frame < frames; ++frame)
-        {
-            scratch[frame * channels] = inputLeft[frame];
-            if (channels == 2)
-                scratch[frame * channels + 1] = inputRight[frame];
-        }
-
-        result.inputPublished = tryPublishInputAudioBlock(
-            region, scratch.data(), frames, channels, sampleRate,
-            inputSequence, generation, deadlineMonotonicNs);
         return result;
     }
 
