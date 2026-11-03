@@ -59,6 +59,9 @@ jobs:
       - name: Build audio queue tests
         run: cmake --build build --config Release --target VoiceStudioAudioQueueTest
 
+      - name: Build fixed-block RVC audio stream adapter test
+        run: cmake --build build --config Release --target VoiceStudioRvcAudioStreamAdapterTest
+
       - name: Build shared-memory ABI tests
         run: cmake --build build --config Release --target VoiceStudioSharedMemoryAbiTest
 
