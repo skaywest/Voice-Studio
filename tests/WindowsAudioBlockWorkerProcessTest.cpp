@@ -142,9 +142,10 @@ int wmain(int argc, wchar_t** argv)
         return 10;
     }
 
-    worker.shutdown();
-    if (!worker.hasExited())
+    if (!worker.terminate() || !worker.hasExited())
         return 11;
+    if (!worker.closeAfterExit())
+        return 12;
 
     reclaimAudioBlockSlotsAfterWorkerExit(*mapping.get());
     pipe.close();
