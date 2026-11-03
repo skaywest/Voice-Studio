@@ -8,6 +8,7 @@
 #endif
 #include <windows.h>
 
+#include "AudioBlockRealtimeAccess.h"
 #include "WindowsAudioBlockMapping.h"
 #include "WindowsWorkerControlPipe.h"
 #include "WindowsWorkerProcess.h"
@@ -80,6 +81,9 @@ public:
             !coordinator.acceptStatus(ready))
             return failAndTerminate();
 
+        if (!realtimeAccess.attach(audioMapping.get()))
+            return failAndTerminate();
+
         return true;
     }
 
@@ -144,6 +148,12 @@ public:
     {
         return coordinator.audioConversionAvailable();
     }
+    // The returned access object may be acquired from the audio thread. Its
+    // mapping is detached before any controller path unmaps the shared region.
+    AudioBlockRealtimeAccess& audioRealtimeAccess() noexcept
+    {
+        return realtimeAccess;
+    }
     WorkerLifecycleState currentState() const noexcept
     {
         return coordinator.currentState();
@@ -162,9 +172,10 @@ public:
         if (active)
         {
             coordinator.workerExited();
+            realtimeAccess.detach();
             pipe.close();
-            audioMapping.close();
             process.shutdown();
+            audioMapping.close();
             active = false;
         }
     }
@@ -193,6 +204,7 @@ private:
     bool terminateAndFault() noexcept
     {
         coordinator.workerExited();
+        realtimeAccess.detach();
         pipe.close();
         audioMapping.close();
         if (process.nativeProcessHandle() != nullptr)
@@ -208,6 +220,7 @@ private:
     void handleWorkerExit() noexcept
     {
         coordinator.workerExited();
+        realtimeAccess.detach();
         pipe.close();
         audioMapping.close();
         if (process.hasExited())
@@ -218,6 +231,7 @@ private:
     WorkerControlCoordinator coordinator;
     WindowsWorkerControlPipe pipe;
     WindowsAudioBlockMapping audioMapping;
+    AudioBlockRealtimeAccess realtimeAccess;
     WindowsWorkerProcess process;
     bool active = false;
 };

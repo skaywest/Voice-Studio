@@ -32,6 +32,13 @@ int wmain(int argc, wchar_t** argv)
     if (controller.currentState() != WorkerLifecycleState::ready ||
         controller.audioConversionAvailable())
         return 3;
+    if (!controller.audioRealtimeAccess().isAttached())
+        return 6;
+    {
+        auto audioLease = controller.audioRealtimeAccess().tryAcquire();
+        if (!audioLease || audioLease.get() == nullptr)
+            return 7;
+    }
 
     if (!controller.enableAi(3000))
         return 4;
@@ -50,7 +57,11 @@ int wmain(int argc, wchar_t** argv)
     }
     if (!receivedFailure || controller.audioConversionAvailable())
         return 5;
+    if (controller.audioRealtimeAccess().isAttached())
+        return 8;
 
     controller.shutdown();
+    if (controller.audioRealtimeAccess().isAttached())
+        return 9;
     return 0;
 }
