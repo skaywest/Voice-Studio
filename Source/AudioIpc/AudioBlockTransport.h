@@ -67,6 +67,7 @@ inline bool tryConsumeOutputAudioBlock(AudioBlockRegion& region,
                                        std::uint32_t destinationCapacitySamples,
                                        std::uint32_t expectedFrames,
                                        std::uint32_t expectedChannels,
+                                       std::uint32_t expectedSampleRate,
                                        std::uint64_t expectedGeneration,
                                        std::uint64_t nowMonotonicNs) noexcept
 {
@@ -74,6 +75,7 @@ inline bool tryConsumeOutputAudioBlock(AudioBlockRegion& region,
         !hasValidAudioBlockHeader(region.header) ||
         expectedFrames == 0 || expectedFrames > kAudioBlockMaxFrames ||
         expectedChannels == 0 || expectedChannels > kAudioBlockMaxChannels ||
+        expectedSampleRate < 8000 || expectedSampleRate > 192000 ||
         expectedGeneration == 0 || nowMonotonicNs == 0)
         return false;
 
@@ -92,7 +94,8 @@ inline bool tryConsumeOutputAudioBlock(AudioBlockRegion& region,
             slot.generation == expectedGeneration &&
             slot.deadlineMonotonicNs > nowMonotonicNs &&
             slot.frames == expectedFrames &&
-            slot.channels == expectedChannels;
+            slot.channels == expectedChannels &&
+            slot.sampleRate == expectedSampleRate;
 
         if (usable)
         {
