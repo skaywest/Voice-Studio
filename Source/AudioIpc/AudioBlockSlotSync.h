@@ -44,6 +44,17 @@ inline bool tryBeginAudioBlockRead(AudioBlockSlot& slot) noexcept
         static_cast<LONG>(AudioBlockSlotState::ready);
 }
 
+inline bool returnAudioBlockReadToReady(AudioBlockSlot& slot) noexcept
+{
+    // The consumer may return an out-of-order future block without modifying
+    // its payload, allowing the matching callback to claim it later.
+    return InterlockedCompareExchange(
+        reinterpret_cast<volatile LONG*>(&slot.state),
+        static_cast<LONG>(AudioBlockSlotState::ready),
+        static_cast<LONG>(AudioBlockSlotState::reading)) ==
+        static_cast<LONG>(AudioBlockSlotState::reading);
+}
+
 inline bool finishAudioBlockRead(AudioBlockSlot& slot) noexcept
 {
     return InterlockedCompareExchange(

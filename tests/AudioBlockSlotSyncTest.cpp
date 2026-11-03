@@ -63,7 +63,7 @@ void testRealtimeTransportPublishAndConsume()
     CHECK(finishAudioBlockRead(source));
 
     float result[6] {};
-    CHECK(tryConsumeOutputAudioBlock(region, result, 6, 3, 2, 48000, 9, 999));
+    CHECK(tryConsumeOutputAudioBlock(region, result, 6, 3, 2, 48000, 1, 9, 999));
     for (std::size_t i = 0; i < 6; ++i)
         CHECK(result[i] == input[i]);
     CHECK(!tryConsumeOutputAudioBlock(region, result, 6, 3, 2, 48000, 9, 999));
@@ -77,9 +77,9 @@ void testRealtimeTransportRejectsInvalidAndStaleData()
     CHECK(!tryPublishInputAudioBlock(region, samples, 1, 2, 48000, 0, 1, 100));
     CHECK(tryPublishInputAudioBlock(region, samples, 1, 2, 48000, 1, 1, 100));
     float result[2] { 7.0f, 8.0f };
-    CHECK(!tryConsumeOutputAudioBlock(region, result, 2, 1, 2, 48000, 1, 50));
-    CHECK(!tryConsumeOutputAudioBlock(region, result, 2, 1, 2, 48000, 2, 50));
-    CHECK(!tryConsumeOutputAudioBlock(region, result, 2, 1, 2, 44100, 1, 50));
+    CHECK(!tryConsumeOutputAudioBlock(region, result, 2, 1, 2, 48000, 1, 1, 50));
+    CHECK(!tryConsumeOutputAudioBlock(region, result, 2, 1, 2, 48000, 1, 2, 50));
+    CHECK(!tryConsumeOutputAudioBlock(region, result, 2, 1, 2, 44100, 1, 1, 50));
     CHECK(result[0] == 7.0f && result[1] == 8.0f);
 
     auto& output = region.slots[kAudioBlockOutputSlotBegin];
@@ -120,9 +120,54 @@ void testRealtimeTransportRejectsMismatchedSampleRate()
     CHECK(publishAudioBlockWrite(output));
 
     float destination[2] { 9.0f, 9.0f };
-    CHECK(!tryConsumeOutputAudioBlock(region, destination, 2, 2, 1, 48000, 4, 999));
+    CHECK(!tryConsumeOutputAudioBlock(region, destination, 2, 2, 1, 48000, 1, 4, 999));
     CHECK(destination[0] == 9.0f && destination[1] == 9.0f);
     CHECK(output.state == static_cast<std::int32_t>(AudioBlockSlotState::free));
+}
+
+
+void testRealtimeTransportMatchesSequenceAndPreservesFutureBlocks()
+{
+    AudioBlockRegion region {};
+    initialiseAudioRegion(region);
+
+    auto publishOutput = [&](std::uint32_t slotIndex, std::uint64_t sequence, float value)
+    {
+        auto& slot = region.slots[slotIndex];
+        CHECK(tryBeginAudioBlockWrite(slot));
+        slot.flags = 0;
+        slot.sequence = sequence;
+        slot.generation = 5;
+        slot.deadlineMonotonicNs = 1000;
+        slot.sampleRate = 48000;
+        slot.channels = 1;
+        slot.frames = 1;
+        slot.payloadSamples = 1;
+        slot.samples[0] = value;
+        CHECK(publishAudioBlockWrite(slot));
+    };
+
+    // The future block is in the first slot. Looking for seq 10 must leave
+    // seq 11 READY and continue scanning for the exact match.
+    publishOutput(kAudioBlockOutputSlotBegin, 11, 0.11f);
+    publishOutput(kAudioBlockOutputSlotBegin + 1, 10, 0.10f);
+
+    float destination[1] { -1.0f };
+    CHECK(tryConsumeOutputAudioBlock(region, destination, 1, 1, 1, 48000, 10, 5, 999));
+    CHECK(destination[0] == 0.10f);
+    CHECK(region.slots[kAudioBlockOutputSlotBegin].state ==
+          static_cast<std::int32_t>(AudioBlockSlotState::ready));
+
+    CHECK(tryConsumeOutputAudioBlock(region, destination, 1, 1, 1, 48000, 11, 5, 999));
+    CHECK(destination[0] == 0.11f);
+    CHECK(region.slots[kAudioBlockOutputSlotBegin].state ==
+          static_cast<std::int32_t>(AudioBlockSlotState::free));
+
+    publishOutput(kAudioBlockOutputSlotBegin, 9, 0.09f);
+    CHECK(!tryConsumeOutputAudioBlock(region, destination, 1, 1, 1, 48000, 10, 5, 999));
+    CHECK(region.slots[kAudioBlockOutputSlotBegin].state ==
+          static_cast<std::int32_t>(AudioBlockSlotState::free));
+    CHECK(destination[0] == 0.11f);
 }
 
 void testRealtimeTransportQueueOverflowIsNonDestructive()
@@ -269,6 +314,7 @@ int main()
     testRealtimeTransportPublishAndConsume();
     testRealtimeTransportRejectsInvalidAndStaleData();
     testRealtimeTransportRejectsMismatchedSampleRate();
+    testRealtimeTransportMatchesSequenceAndPreservesFutureBlocks();
     testRealtimeTransportQueueOverflowIsNonDestructive();
     testSingleProducerConsumerTransitions();
     testOnlyOneConcurrentWriterWins();

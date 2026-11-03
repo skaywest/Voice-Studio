@@ -68,6 +68,7 @@ inline bool tryConsumeOutputAudioBlock(AudioBlockRegion& region,
                                        std::uint32_t expectedFrames,
                                        std::uint32_t expectedChannels,
                                        std::uint32_t expectedSampleRate,
+                                       std::uint64_t expectedSequence,
                                        std::uint64_t expectedGeneration,
                                        std::uint64_t nowMonotonicNs) noexcept
 {
@@ -76,7 +77,7 @@ inline bool tryConsumeOutputAudioBlock(AudioBlockRegion& region,
         expectedFrames == 0 || expectedFrames > kAudioBlockMaxFrames ||
         expectedChannels == 0 || expectedChannels > kAudioBlockMaxChannels ||
         expectedSampleRate < 8000 || expectedSampleRate > 192000 ||
-        expectedGeneration == 0 || nowMonotonicNs == 0)
+        expectedSequence == 0 || expectedGeneration == 0 || nowMonotonicNs == 0)
         return false;
 
     const auto expectedSamples = expectedFrames * expectedChannels;
@@ -90,7 +91,23 @@ inline bool tryConsumeOutputAudioBlock(AudioBlockRegion& region,
         if (!tryBeginAudioBlockRead(slot))
             continue;
 
+        // Keep future blocks queued; discard stale blocks so a late Worker
+        // response can never be applied to a different audio callback.
+        if (slot.sequence > expectedSequence)
+        {
+            if (!returnAudioBlockReadToReady(slot))
+                return false;
+            continue;
+        }
+        if (slot.sequence < expectedSequence)
+        {
+            if (!finishAudioBlockRead(slot))
+                return false;
+            continue;
+        }
+
         const bool usable = hasFiniteAudioBlockPayload(slot) &&
+            slot.sequence == expectedSequence &&
             slot.generation == expectedGeneration &&
             slot.deadlineMonotonicNs > nowMonotonicNs &&
             slot.frames == expectedFrames &&
