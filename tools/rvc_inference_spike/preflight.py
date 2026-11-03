@@ -38,6 +38,8 @@ def _runtime_probe(rvc_root: Path) -> dict[str, Any]:
         "model_loaded": False,
         "inference_tested": False,
     }
+    report["checks"]["python_312"] = sys.version_info[:2] == (3, 12)
+    report["checks"]["python_64bit"] = struct.calcsize("P") * 8 == 64
     os.chdir(root)
     sys.path.insert(0, str(root))
     sys.argv = [sys.argv[0]]
@@ -236,6 +238,15 @@ def run_preflight(
     return report
 
 
+def strict_cuda_requirements_met(checks: dict[str, Any]) -> bool:
+    required = (
+        "python_312", "python_64bit", "cuda_128_build",
+        "cuda_kernel_passed", "fp16_kernel_passed",
+        "rvc_api_imported", "rvc_api_compatible", "rvc_cuda_device_selected",
+    )
+    return all(checks.get(key) is True for key in required)
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--python", type=Path, help="External RVC Python executable")
@@ -257,11 +268,7 @@ def main() -> int:
     if args.require_cuda:
         runtime = report.get("runtime", {})
         checks = runtime.get("checks", {})
-        required = (
-            "cuda_128_build", "cuda_kernel_passed", "fp16_kernel_passed",
-            "rvc_api_imported", "rvc_api_compatible", "rvc_cuda_device_selected",
-        )
-        return 0 if all(checks.get(key) is True for key in required) else 2
+        return 0 if strict_cuda_requirements_met(checks) else 2
     return 0
 
 

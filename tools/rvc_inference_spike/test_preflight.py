@@ -4,7 +4,7 @@ import tempfile
 import unittest
 from types import SimpleNamespace
 
-from preflight import REQUIRED_FILES, run_preflight
+from preflight import REQUIRED_FILES, run_preflight, strict_cuda_requirements_met
 
 
 class FakeRunner:
@@ -25,6 +25,23 @@ class PreflightTests(unittest.TestCase):
             path = root / relative
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text("# test fixture\n", encoding="utf-8")
+
+    def test_strict_cuda_gate_requires_python_312_x64(self):
+        checks = {
+            "cuda_128_build": True,
+            "cuda_kernel_passed": True,
+            "fp16_kernel_passed": True,
+            "rvc_api_imported": True,
+            "rvc_api_compatible": True,
+            "rvc_cuda_device_selected": True,
+        }
+        self.assertFalse(strict_cuda_requirements_met(checks))
+        checks["python_312"] = True
+        self.assertFalse(strict_cuda_requirements_met(checks))
+        checks["python_64bit"] = True
+        self.assertTrue(strict_cuda_requirements_met(checks))
+        checks["python_312"] = False
+        self.assertFalse(strict_cuda_requirements_met(checks))
 
     def test_missing_rvc_files_prevents_subprocess(self):
         with tempfile.TemporaryDirectory() as temp:
