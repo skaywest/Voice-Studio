@@ -225,7 +225,13 @@ int runWorker(const std::wstring& pipeName, const std::wstring& mappingName,
             operation == WorkerCommand::ping)
         {
             if (operation == WorkerCommand::unloadModel)
+            {
+                // Release verified model/runtime file handles before removing
+                // staged files. Otherwise unload acknowledged READY while the
+                // model checkpoint remained pinned for the Worker lifetime.
+                verifiedModelFiles.reset();
                 runtimeStaging.cleanup();
+            }
             if (!pipe.sendStatus(makeStatus(WorkerState::ready, WorkerResult::ok,
                                             generation, activeRequestId), 1000))
                 return 15;

@@ -161,6 +161,21 @@ int wmain(int argc, wchar_t** argv)
         controller.shutdown(); cleanup(root, entrypoint, model); return 4;
     }
 
+    // UNLOAD must release the verified handles and remove staged runtime.
+    // Prove the model file is no longer pinned, then configure the same files
+    // again in the same Worker process.
+    if (!controller.unloadNow(5000) ||
+        controller.currentState() != WorkerLifecycleState::ready ||
+        !DeleteFileW(entrypoint.c_str()) || !writeFile(entrypoint) ||
+        !controller.configureRuntimeFiles(runtimeHeader, &runtimeEntry, 1, runtimeSources, 5000) ||
+        !controller.configureModel(config, 5000) ||
+        controller.currentState() != WorkerLifecycleState::ready ||
+        controller.audioConversionAvailable())
+    {
+        std::fprintf(stderr, "controller-test: unload/reload lifecycle failed/state=%u\\n", static_cast<unsigned>(controller.currentState()));
+        controller.shutdown(); cleanup(root, entrypoint, model); return 21;
+    }
+
     if (!controller.enableAi(3000))
     {
         std::fprintf(stderr, "controller-test: enableAi command failed/state=%u\\n", static_cast<unsigned>(controller.currentState()));
