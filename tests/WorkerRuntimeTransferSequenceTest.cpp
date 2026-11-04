@@ -33,6 +33,7 @@ int main()
     manifest.size = static_cast<std::uint16_t>(sizeof(manifest));
     manifest.entryCount = 2;
     manifest.totalBytes = 9000;
+    manifest.manifestSha256[0] = 1; // Digest presence; cryptographic verification is a caller precondition.
 
     WorkerRuntimeManifestEntry entries[2]{};
     entries[0].role = static_cast<std::uint16_t>(WorkerRuntimeFileRole::pythonSource);
