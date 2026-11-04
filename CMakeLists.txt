@@ -117,6 +117,12 @@ if(VOICE_STUDIO_BUILD_SMOKE_TESTS)
     target_compile_features(VoiceStudioWorkerRuntimeManifestAbiTest PRIVATE cxx_std_17)
     add_test(NAME VoiceStudioWorkerRuntimeManifestAbiTest COMMAND VoiceStudioWorkerRuntimeManifestAbiTest)
 
+    # Ordered, bounded runtime-file chunk sequence validation.
+    add_executable(VoiceStudioWorkerRuntimeFileChunkSequenceTest tests/WorkerRuntimeFileChunkSequenceTest.cpp)
+    target_include_directories(VoiceStudioWorkerRuntimeFileChunkSequenceTest PRIVATE Source)
+    target_compile_features(VoiceStudioWorkerRuntimeFileChunkSequenceTest PRIVATE cxx_std_17)
+    add_test(NAME VoiceStudioWorkerRuntimeFileChunkSequenceTest COMMAND VoiceStudioWorkerRuntimeFileChunkSequenceTest)
+
     # Canonical SHA-256 integrity validation for ordered runtime manifests.
     add_executable(VoiceStudioWorkerRuntimeManifestVerifierTest tests/WorkerRuntimeManifestVerifierTest.cpp)
     target_include_directories(VoiceStudioWorkerRuntimeManifestVerifierTest PRIVATE Source)
