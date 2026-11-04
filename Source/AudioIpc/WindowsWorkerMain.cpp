@@ -9,6 +9,7 @@
 #include "AudioIpc/WindowsAudioBlockMapping.h"
 #include "AudioIpc/WindowsWorkerControlPipe.h"
 #include "AudioIpc/WorkerModelFileVerifier.h"
+#include "AudioIpc/WorkerRuntimeManifestVerifier.h"
 
 #include <cerrno>
 #include <cstdint>
@@ -154,6 +155,28 @@ int runWorker(const std::wstring& pipeName, const std::wstring& mappingName,
             if (!pipe.sendStatus(makeStatus(WorkerState::ready, WorkerResult::ok,
                                             generation, activeRequestId), 1000))
                 return 18;
+            continue;
+        }
+
+
+        if (operation == WorkerCommand::configureRuntimeManifest)
+        {
+            WorkerRuntimeManifestHeader manifestHeader{};
+            std::vector<WorkerRuntimeManifestEntry> manifestEntries;
+            if (!pipe.receiveRuntimeManifest(manifestHeader, manifestEntries, command.timeoutMs) ||
+                !hasValidWorkerRuntimeManifestDigest(manifestHeader, manifestEntries.data(),
+                                                     manifestEntries.size()))
+            {
+                pipe.sendStatus(makeStatus(WorkerState::error, WorkerResult::invalidRequest,
+                                           generation, activeRequestId), 1000);
+                return 19;
+            }
+
+            // Integrity is verified before any staging operation. Runtime staging
+            // is deliberately not implemented yet; never write untrusted files.
+            if (!pipe.sendStatus(makeStatus(WorkerState::ready, WorkerResult::ok,
+                                            generation, activeRequestId), 1000))
+                return 21;
             continue;
         }
 

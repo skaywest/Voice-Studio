@@ -11,6 +11,9 @@
 
 #include "WorkerControlAbi.h"
 #include "WorkerModelConfigAbi.h"
+#include "WorkerRuntimeManifestAbi.h"
+
+#include <vector>
 
 #include <cstdint>
 #include <string>
@@ -152,6 +155,48 @@ public:
             !hasValidWorkerModelConfig(message))
             return false;
         output = message;
+        return true;
+    }
+
+
+    // Runtime manifests are transferred as one bounded header message followed
+    // by exactly entryCount fixed-size entry messages. Call only on control threads.
+    bool sendRuntimeManifest(const WorkerRuntimeManifestHeader& header,
+                             const WorkerRuntimeManifestEntry* entries,
+                             std::size_t count, DWORD timeoutMs = 3000) noexcept
+    {
+        if (!connected || !hasValidWorkerRuntimeManifestEntries(header, entries, count))
+            return false;
+        if (!writeMessage(&header, static_cast<DWORD>(sizeof(header)), timeoutMs))
+            return false;
+        for (std::size_t i = 0; i < count; ++i)
+            if (!writeMessage(&entries[i], static_cast<DWORD>(sizeof(entries[i])), timeoutMs))
+                return false;
+        return true;
+    }
+
+    bool receiveRuntimeManifest(WorkerRuntimeManifestHeader& header,
+                                std::vector<WorkerRuntimeManifestEntry>& entries,
+                                DWORD timeoutMs = 3000) noexcept
+    {
+        if (!connected)
+            return false;
+        WorkerRuntimeManifestHeader receivedHeader{};
+        if (!readExactMessage(&receivedHeader, static_cast<DWORD>(sizeof(receivedHeader)), timeoutMs) ||
+            !hasValidWorkerRuntimeManifestHeader(receivedHeader))
+            return false;
+        std::vector<WorkerRuntimeManifestEntry> receivedEntries;
+        try { receivedEntries.resize(receivedHeader.entryCount); }
+        catch (...) { return false; }
+        for (std::size_t i = 0; i < receivedEntries.size(); ++i)
+            if (!readExactMessage(&receivedEntries[i],
+                                  static_cast<DWORD>(sizeof(receivedEntries[i])), timeoutMs))
+                return false;
+        if (!hasValidWorkerRuntimeManifestEntries(receivedHeader,
+                                                   receivedEntries.data(), receivedEntries.size()))
+            return false;
+        header = receivedHeader;
+        entries.swap(receivedEntries);
         return true;
     }
 

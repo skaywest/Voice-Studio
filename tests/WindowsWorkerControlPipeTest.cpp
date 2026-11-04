@@ -1,5 +1,6 @@
 #include "AudioIpc/WindowsWorkerControlPipe.h"
 #include "AudioIpc/WindowsWorkerProcess.h"
+#include "AudioIpc/WorkerRuntimeManifestAbi.h"
 
 #include <windows.h>
 
@@ -177,6 +178,29 @@ int wmain(int argc, wchar_t** argv)
             receivedConfig.modelPathLength != modelConfig.modelPathLength ||
             !hasValidWorkerModelConfig(receivedConfig))
             return 8;
+
+
+        WorkerRuntimeManifestHeader manifest{};
+        manifest.size = static_cast<std::uint16_t>(sizeof(manifest));
+        manifest.entryCount = 1;
+        manifest.totalBytes = 12;
+        manifest.manifestSha256[0] = 1; // Transport test only; digest checked by verifier tests.
+        WorkerRuntimeManifestEntry manifestEntry{};
+        manifestEntry.role = static_cast<std::uint16_t>(WorkerRuntimeFileRole::pythonSource);
+        manifestEntry.pathLength = 14;
+        const char16_t manifestPath[] = u"worker/main.py";
+        for (std::size_t i = 0; i <= manifestEntry.pathLength; ++i)
+            manifestEntry.relativePath[i] = manifestPath[i];
+        manifestEntry.sizeBytes = 12;
+        manifestEntry.sha256[0] = 1;
+        if (!client.sendRuntimeManifest(manifest, &manifestEntry, 1, 3000))
+            return 10;
+        WorkerRuntimeManifestHeader receivedManifest{};
+        std::vector<WorkerRuntimeManifestEntry> receivedEntries;
+        if (!server.receiveRuntimeManifest(receivedManifest, receivedEntries, 3000) ||
+            receivedManifest.entryCount != 1 || receivedEntries.size() != 1 ||
+            receivedEntries[0].relativePath[0] != u'w')
+            return 11;
 
         auto invalidConfig = modelConfig;
         invalidConfig.flags &= ~kWorkerModelConfigFlagVoiceRightsConfirmed;
