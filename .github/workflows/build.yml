@@ -74,6 +74,9 @@ jobs:
       - name: Build worker model config ABI tests
         run: cmake --build build --config Release --target VoiceStudioWorkerModelConfigAbiTest
 
+      - name: Build worker runtime manifest ABI tests
+        run: cmake --build build --config Release --target VoiceStudioWorkerRuntimeManifestAbiTest
+
       - name: Build external voice-control ABI tests
         run: cmake --build build --config Release --target VoiceStudioVoiceControlAbiTest
 
