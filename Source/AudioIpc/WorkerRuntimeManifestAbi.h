@@ -187,25 +187,19 @@ inline bool areWorkerRuntimeManifestPathsUnique(
         if (!hasValidWorkerRuntimeManifestEntry(entries[i])) return false;
         for (std::size_t j = 0; j < i; ++j)
         {
-            if (entries[i].pathLength != entries[j].pathLength) continue;
-            bool equal = true;
-            for (std::size_t k = 0; k < entries[i].pathLength; ++k)
-                if (runtimeManifestLower(entries[i].relativePath[k]) !=
-                    runtimeManifestLower(entries[j].relativePath[k]))
-                { equal = false; break; }
-            if (equal) return false;
-
-            // A manifest cannot describe both a file and a descendant beneath
-            // that file (for example "runtime" and "runtime/infer.py").
-            const commonLength = entries[i].pathLength < entries[j].pathLength
+            // Compare the shared prefix first; equal-length paths are
+            // duplicates, while a separator after a shorter path is a
+            // file/directory collision.
+            const std::size_t commonLength = entries[i].pathLength < entries[j].pathLength
                 ? entries[i].pathLength : entries[j].pathLength;
             bool commonPrefix = true;
             for (std::size_t k = 0; k < commonLength; ++k)
                 if (runtimeManifestLower(entries[i].relativePath[k]) !=
                     runtimeManifestLower(entries[j].relativePath[k]))
                 { commonPrefix = false; break; }
-            if (commonPrefix && entries[i].pathLength != entries[j].pathLength)
+            if (commonPrefix)
             {
+                if (entries[i].pathLength == entries[j].pathLength) return false;
                 const auto& longer = entries[i].pathLength > entries[j].pathLength
                     ? entries[i] : entries[j];
                 if (longer.relativePath[commonLength] == u'/') return false;
