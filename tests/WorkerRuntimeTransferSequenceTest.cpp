@@ -72,7 +72,9 @@ int main()
 
     WorkerRuntimeTransferSequence invalid;
     auto badEntries = entries;
-    badEntries[1].relativePath[0] = u'w'; // duplicate/prefix-conflicting path
+    badEntries[1].pathLength = entries[0].pathLength;
+    for (std::size_t i = 0; i <= entries[0].pathLength; ++i)
+        badEntries[1].relativePath[i] = entries[0].relativePath[i];
     assert(!invalid.begin(manifest, badEntries, 2));
     assert(!invalid.isActive());
     return 0;
