@@ -127,6 +127,7 @@ if(VOICE_STUDIO_BUILD_SMOKE_TESTS)
     add_executable(VoiceStudioWorkerRuntimeTransferSequenceTest tests/WorkerRuntimeTransferSequenceTest.cpp)
     target_include_directories(VoiceStudioWorkerRuntimeTransferSequenceTest PRIVATE Source)
     target_compile_features(VoiceStudioWorkerRuntimeTransferSequenceTest PRIVATE cxx_std_17)
+    target_link_libraries(VoiceStudioWorkerRuntimeTransferSequenceTest PRIVATE bcrypt)
     add_test(NAME VoiceStudioWorkerRuntimeTransferSequenceTest COMMAND VoiceStudioWorkerRuntimeTransferSequenceTest)
 
     # Canonical SHA-256 integrity validation for ordered runtime manifests.
