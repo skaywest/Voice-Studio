@@ -154,14 +154,20 @@ inline bool hasSafeRuntimeRelativePath(const char16_t* path, std::uint16_t lengt
     return true;
 }
 
-inline bool hasValidWorkerRuntimeManifestHeader(const WorkerRuntimeManifestHeader& header) noexcept
+inline bool hasValidWorkerRuntimeManifestHeaderFields(
+    const WorkerRuntimeManifestHeader& header) noexcept
 {
     return header.magic == kWorkerRuntimeManifestMagic &&
         header.version == kWorkerRuntimeManifestVersion &&
         header.size == sizeof(WorkerRuntimeManifestHeader) &&
         header.entryCount > 0 && header.entryCount <= kWorkerRuntimeManifestMaxEntries &&
         header.reserved == 0 && header.totalBytes > 0 &&
-        header.totalBytes <= kWorkerRuntimeManifestMaxTotalBytes &&
+        header.totalBytes <= kWorkerRuntimeManifestMaxTotalBytes;
+}
+
+inline bool hasValidWorkerRuntimeManifestHeader(const WorkerRuntimeManifestHeader& header) noexcept
+{
+    return hasValidWorkerRuntimeManifestHeaderFields(header) &&
         runtimeManifestHashPresent(header.manifestSha256);
 }
 

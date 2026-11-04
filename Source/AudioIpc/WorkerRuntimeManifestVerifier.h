@@ -33,7 +33,10 @@ inline bool computeWorkerRuntimeManifestSha256(
     const WorkerRuntimeManifestEntry* entries, std::size_t count,
     std::uint8_t (&output)[32]) noexcept
 {
-    if (!hasValidWorkerRuntimeManifestHeader(header) || entries == nullptr ||
+    // Digest generation must accept a zeroed digest field: the digest is
+    // the output of this function, so requiring it to be present here would
+    // make first-time manifest construction impossible.
+    if (!hasValidWorkerRuntimeManifestHeaderFields(header) || entries == nullptr ||
         count != header.entryCount || !areWorkerRuntimeManifestPathsUnique(entries, count))
         return false;
 
