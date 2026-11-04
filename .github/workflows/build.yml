@@ -80,6 +80,9 @@ jobs:
       - name: Build worker runtime file chunk sequence tests
         run: cmake --build build --config Release --target VoiceStudioWorkerRuntimeFileChunkSequenceTest
 
+      - name: Build worker runtime transfer sequence tests
+        run: cmake --build build --config Release --target VoiceStudioWorkerRuntimeTransferSequenceTest
+
       - name: Build worker runtime manifest SHA-256 verifier tests
         run: cmake --build build --config Release --target VoiceStudioWorkerRuntimeManifestVerifierTest
 

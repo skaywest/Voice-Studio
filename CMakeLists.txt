@@ -123,6 +123,12 @@ if(VOICE_STUDIO_BUILD_SMOKE_TESTS)
     target_compile_features(VoiceStudioWorkerRuntimeFileChunkSequenceTest PRIVATE cxx_std_17)
     add_test(NAME VoiceStudioWorkerRuntimeFileChunkSequenceTest COMMAND VoiceStudioWorkerRuntimeFileChunkSequenceTest)
 
+    # Whole-manifest ordered file transfer progression, spanning multiple files.
+    add_executable(VoiceStudioWorkerRuntimeTransferSequenceTest tests/WorkerRuntimeTransferSequenceTest.cpp)
+    target_include_directories(VoiceStudioWorkerRuntimeTransferSequenceTest PRIVATE Source)
+    target_compile_features(VoiceStudioWorkerRuntimeTransferSequenceTest PRIVATE cxx_std_17)
+    add_test(NAME VoiceStudioWorkerRuntimeTransferSequenceTest COMMAND VoiceStudioWorkerRuntimeTransferSequenceTest)
+
     # Canonical SHA-256 integrity validation for ordered runtime manifests.
     add_executable(VoiceStudioWorkerRuntimeManifestVerifierTest tests/WorkerRuntimeManifestVerifierTest.cpp)
     target_include_directories(VoiceStudioWorkerRuntimeManifestVerifierTest PRIVATE Source)
