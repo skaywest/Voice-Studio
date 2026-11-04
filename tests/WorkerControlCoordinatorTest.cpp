@@ -34,6 +34,10 @@ int main()
 
     assert(control.acceptStatus(makeStatus(control, WorkerState::ready, 200)));
     assert(control.currentState() == WorkerLifecycleState::ready);
+    const auto runtimeConfig = control.configureRuntimeManifest(5000);
+    assert(runtimeConfig.action == WorkerLifecycleAction::sendConfigureRuntimeManifest);
+    assert(runtimeConfig.hasCommand);
+    assert(runtimeConfig.command.command == static_cast<std::uint16_t>(WorkerCommand::configureRuntimeManifest));
     assert(!control.audioConversionAvailable());
 
     const auto configure = control.configureModel();

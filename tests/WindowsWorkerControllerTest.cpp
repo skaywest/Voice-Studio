@@ -10,6 +10,7 @@
 #include <string>
 #include <cwchar>
 #include <cstdio>
+#include <vector>
 
 using namespace voice_studio::ipc;
 
@@ -119,6 +120,35 @@ int wmain(int argc, wchar_t** argv)
         !controller.audioRealtimeAccess().isAttached())
     {
         controller.shutdown(); cleanup(root, entrypoint, model); return 3;
+    }
+
+    // Exercise the complete manifest + chunk transfer through the actual
+    // controller, named pipe, Worker staging sink and post-write SHA-256 check.
+    WorkerRuntimeManifestHeader runtimeHeader{};
+    runtimeHeader.size = static_cast<std::uint16_t>(sizeof(runtimeHeader));
+    runtimeHeader.entryCount = 1;
+    runtimeHeader.totalBytes = 3;
+    WorkerRuntimeManifestEntry runtimeEntry{};
+    runtimeEntry.role = static_cast<std::uint16_t>(WorkerRuntimeFileRole::runtimeSupport);
+    runtimeEntry.pathLength = 14;
+    const char16_t runtimePath[] = u"worker/main.py";
+    for (std::size_t i = 0; i <= runtimeEntry.pathLength; ++i)
+        runtimeEntry.relativePath[i] = runtimePath[i];
+    runtimeEntry.sizeBytes = 3;
+    for (std::size_t i = 0; i < 32; ++i)
+        runtimeEntry.sha256[i] = config.entrypointSha256[i];
+    if (!computeWorkerRuntimeManifestSha256(runtimeHeader, &runtimeEntry, 1,
+                                            runtimeHeader.manifestSha256))
+    {
+        controller.shutdown(); cleanup(root, entrypoint, model); return 11;
+    }
+    const std::vector<std::wstring> runtimeSources{entrypoint};
+    if (!controller.configureRuntimeFiles(runtimeHeader, &runtimeEntry, 1, runtimeSources, 5000) ||
+        controller.currentState() != WorkerLifecycleState::ready ||
+        controller.audioConversionAvailable())
+    {
+        std::fprintf(stderr, "controller-test: runtime chunk transfer failed/state=%u\\n", static_cast<unsigned>(controller.currentState()));
+        controller.shutdown(); cleanup(root, entrypoint, model); return 12;
     }
 
     // This traverses the real message-mode pipe and verifies both files in

@@ -14,7 +14,9 @@
 #include "WindowsWorkerProcess.h"
 #include "WorkerControlCoordinator.h"
 
+#include <array>
 #include <string>
+#include <vector>
 
 namespace voice_studio::ipc
 {
@@ -119,6 +121,81 @@ public:
         WorkerStatusMessage status{};
         if (!pipe.receiveStatus(status, timeoutMs) ||
             !coordinator.acceptStatus(status) ||
+            coordinator.currentState() == WorkerLifecycleState::faulted)
+            return terminateAndFault();
+        return coordinator.currentState() == WorkerLifecycleState::ready;
+    }
+
+
+    // Streams a complete runtime manifest and its local source files. The
+    // Worker validates the received bytes before acknowledging READY.
+    bool configureRuntimeFiles(const WorkerRuntimeManifestHeader& header,
+                               const WorkerRuntimeManifestEntry* entries,
+                               std::size_t count,
+                               const std::vector<std::wstring>& sourcePaths,
+                               std::uint32_t timeoutMs = 30000) noexcept
+    {
+        if (!active || entries == nullptr || count == 0 || count != sourcePaths.size() ||
+            !hasValidWorkerRuntimeManifestDigest(header, entries, count))
+            return false;
+        const auto decision = coordinator.configureRuntimeManifest(timeoutMs);
+        if (decision.action != WorkerLifecycleAction::sendConfigureRuntimeManifest ||
+            !decision.hasCommand || !pipe.sendCommand(decision.command, timeoutMs) ||
+            !pipe.sendRuntimeManifest(header, entries, count, timeoutMs))
+            return terminateAndFault();
+
+        std::array<std::uint8_t, kWorkerRuntimeFileChunkMaxBytes> payload{};
+        for (std::size_t index = 0; index < count; ++index)
+        {
+            HANDLE source = CreateFileW(sourcePaths[index].c_str(), GENERIC_READ,
+                FILE_SHARE_READ, nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+            if (source == INVALID_HANDLE_VALUE)
+                return terminateAndFault();
+            LARGE_INTEGER sourceSize{};
+            if (!GetFileSizeEx(source, &sourceSize) || sourceSize.QuadPart < 0 ||
+                static_cast<std::uint64_t>(sourceSize.QuadPart) != entries[index].sizeBytes)
+            {
+                CloseHandle(source);
+                return terminateAndFault();
+            }
+
+            std::uint64_t offset = 0;
+            bool sent = true;
+            while (offset < entries[index].sizeBytes)
+            {
+                const auto remaining = entries[index].sizeBytes - offset;
+                const DWORD requested = static_cast<DWORD>(remaining < payload.size()
+                    ? remaining : payload.size());
+                DWORD read = 0;
+                if (!ReadFile(source, payload.data(), requested, &read, nullptr) || read != requested)
+                {
+                    sent = false;
+                    break;
+                }
+                WorkerRuntimeFileChunkHeader chunk{};
+                chunk.entryIndex = static_cast<std::uint32_t>(index);
+                chunk.payloadBytes = read;
+                chunk.offsetBytes = offset;
+                chunk.size = static_cast<std::uint16_t>(sizeof(chunk));
+                if (offset + read == entries[index].sizeBytes)
+                    chunk.flags = kWorkerRuntimeFileChunkFlagFinal;
+                if (!pipe.sendRuntimeFileChunk(chunk, payload.data(), timeoutMs))
+                {
+                    sent = false;
+                    break;
+                }
+                offset += read;
+            }
+            std::uint8_t extra = 0;
+            DWORD extraRead = 0;
+            const bool noExtra = sent && ReadFile(source, &extra, 1, &extraRead, nullptr) && extraRead == 0;
+            CloseHandle(source);
+            if (!noExtra)
+                return terminateAndFault();
+        }
+
+        WorkerStatusMessage status{};
+        if (!pipe.receiveStatus(status, timeoutMs) || !coordinator.acceptStatus(status) ||
             coordinator.currentState() == WorkerLifecycleState::faulted)
             return terminateAndFault();
         return coordinator.currentState() == WorkerLifecycleState::ready;

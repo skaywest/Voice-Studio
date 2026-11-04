@@ -10,7 +10,9 @@
 #include "AudioIpc/WindowsWorkerControlPipe.h"
 #include "AudioIpc/WorkerModelFileVerifier.h"
 #include "AudioIpc/WorkerRuntimeManifestVerifier.h"
+#include "AudioIpc/WindowsWorkerRuntimeStaging.h"
 
+#include <array>
 #include <cerrno>
 #include <cstdint>
 #include <string>
@@ -113,6 +115,7 @@ int runWorker(const std::wstring& pipeName, const std::wstring& mappingName,
 
     std::uint64_t activeRequestId = requestId;
     VerifiedModelFiles verifiedModelFiles{};
+    WindowsWorkerRuntimeStaging runtimeStaging;
     std::uint64_t lastHeartbeatNs = monotonicNs();
 
     for (;;)
@@ -172,11 +175,31 @@ int runWorker(const std::wstring& pipeName, const std::wstring& mappingName,
                 return 19;
             }
 
-            // Integrity is verified before any staging operation. Runtime staging
-            // is deliberately not implemented yet; never write untrusted files.
+            if (!runtimeStaging.begin(manifestHeader, manifestEntries.data(), manifestEntries.size()))
+            {
+                pipe.sendStatus(makeStatus(WorkerState::error, WorkerResult::invalidRequest,
+                                           generation, activeRequestId), 1000);
+                return 22;
+            }
+
+            // This command starts a bounded transfer. Any malformed frame,
+            // timeout, sequence error or digest mismatch terminates the session.
+            std::array<std::uint8_t, kWorkerRuntimeFileChunkMaxBytes> payload{};
+            while (!runtimeStaging.isComplete())
+            {
+                WorkerRuntimeFileChunkHeader chunk{};
+                if (!pipe.receiveRuntimeFileChunk(chunk, payload.data(),
+                        static_cast<std::uint32_t>(payload.size()), command.timeoutMs) ||
+                    !runtimeStaging.writeChunk(chunk, payload.data()))
+                {
+                    pipe.sendStatus(makeStatus(WorkerState::error, WorkerResult::invalidRequest,
+                                               generation, activeRequestId), 1000);
+                    return 23;
+                }
+            }
             if (!pipe.sendStatus(makeStatus(WorkerState::ready, WorkerResult::ok,
                                             generation, activeRequestId), 1000))
-                return 21;
+                return 24;
             continue;
         }
 
@@ -195,6 +218,8 @@ int runWorker(const std::wstring& pipeName, const std::wstring& mappingName,
             operation == WorkerCommand::unloadModel ||
             operation == WorkerCommand::ping)
         {
+            if (operation == WorkerCommand::unloadModel)
+                runtimeStaging.cleanup();
             if (!pipe.sendStatus(makeStatus(WorkerState::ready, WorkerResult::ok,
                                             generation, activeRequestId), 1000))
                 return 15;

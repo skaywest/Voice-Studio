@@ -48,6 +48,10 @@ int main()
 
     WorkerCommandMessage command{};
     assert(lifecycle.userConfigureModel() == WorkerLifecycleAction::sendConfigureModel);
+    assert(lifecycle.currentState() == WorkerLifecycleState::ready);
+    assert(lifecycle.userConfigureRuntimeManifest() == WorkerLifecycleAction::sendConfigureRuntimeManifest);
+    assert(makeWorkerCommand(WorkerLifecycleAction::sendConfigureRuntimeManifest, lifecycle, 5000, command));
+    assert(command.command == static_cast<std::uint16_t>(WorkerCommand::configureRuntimeManifest));
     assert(makeWorkerCommand(WorkerLifecycleAction::sendConfigureModel, lifecycle, 5000, command));
     assert(command.command == static_cast<std::uint16_t>(WorkerCommand::configureModel));
     assert(lifecycle.currentState() == WorkerLifecycleState::ready);

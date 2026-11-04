@@ -22,6 +22,9 @@ inline bool makeWorkerCommand(WorkerLifecycleAction action,
         case WorkerLifecycleAction::sendConfigureModel:
             command = WorkerCommand::configureModel;
             break;
+        case WorkerLifecycleAction::sendConfigureRuntimeManifest:
+            command = WorkerCommand::configureRuntimeManifest;
+            break;
         case WorkerLifecycleAction::sendStop:
             command = WorkerCommand::stop;
             break;

@@ -29,6 +29,7 @@ enum class WorkerLifecycleAction : std::uint8_t
     launchWorker,
     sendStart,
     sendConfigureModel,
+    sendConfigureRuntimeManifest,
     sendStop,
     sendUnloadNow,
     terminateWorker
@@ -124,6 +125,16 @@ public:
         if (requestId == 0)
             ++requestId;
         return WorkerLifecycleAction::sendConfigureModel;
+    }
+
+    WorkerLifecycleAction userConfigureRuntimeManifest() noexcept
+    {
+        if (state != WorkerLifecycleState::ready)
+            return WorkerLifecycleAction::none;
+        ++requestId;
+        if (requestId == 0)
+            ++requestId;
+        return WorkerLifecycleAction::sendConfigureRuntimeManifest;
     }
 
     WorkerLifecycleAction userEnableAi() noexcept

@@ -36,6 +36,11 @@ public:
         return apply(lifecycle.userConfigureModel());
     }
 
+    WorkerControlDecision configureRuntimeManifest(std::uint32_t timeoutMs = 30000) noexcept
+    {
+        return apply(lifecycle.userConfigureRuntimeManifest(), timeoutMs);
+    }
+
     WorkerControlDecision enableAi(std::uint32_t timeoutMs = 30000) noexcept
     {
         return apply(lifecycle.userEnableAi(), timeoutMs);
@@ -100,6 +105,7 @@ private:
         decision.action = action;
         if (action == WorkerLifecycleAction::sendStart ||
             action == WorkerLifecycleAction::sendConfigureModel ||
+            action == WorkerLifecycleAction::sendConfigureRuntimeManifest ||
             action == WorkerLifecycleAction::sendStop ||
             action == WorkerLifecycleAction::sendUnloadNow)
         {
