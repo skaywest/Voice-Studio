@@ -154,8 +154,12 @@ int wmain(int argc, wchar_t** argv)
         WindowsWorkerControlPipe client;
         if (!client.connectClient(name, 5000) || !server.waitForClient(5000))
             return 3;
-        const auto command = makeCommand();
         WorkerCommandMessage received{};
+        // A normal idle poll must remain retryable and must not poison the
+        // endpoint's protocol state.
+        if (server.receiveCommand(received, 10) || server.hasProtocolError())
+            return 20;
+        const auto command = makeCommand();
         if (!client.sendCommand(command) || !server.receiveCommand(received) ||
             received.generation != command.generation)
             return 4;
