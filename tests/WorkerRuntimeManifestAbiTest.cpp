@@ -1,4 +1,7 @@
 #include "AudioIpc/WorkerRuntimeManifestAbi.h"
+#ifdef NDEBUG
+ #undef NDEBUG // Keep ABI assertions active in Release CI builds.
+#endif
 #include <cassert>
 #include <cstdint>
 #include <cstddef>
