@@ -170,7 +170,6 @@ inline bool areWorkerRuntimeManifestPathsUnique(
     }
     return true;
 }
-} // namespace voice_studio::ipc
 
 inline bool hasValidWorkerRuntimeManifestEntries(
     const WorkerRuntimeManifestHeader& header,
@@ -189,3 +188,4 @@ inline bool hasValidWorkerRuntimeManifestEntries(
     }
     return total == header.totalBytes;
 }
+} // namespace voice_studio::ipc
