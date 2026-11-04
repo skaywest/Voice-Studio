@@ -30,6 +30,19 @@ int main()
     auto configureCommand = command;
     configureCommand.command = static_cast<std::uint16_t>(WorkerCommand::configureModel);
     assert(hasValidWorkerCommand(configureCommand));
+
+    // Runtime-manifest configuration is a first-class, recognized control
+    // command and must remain covered by the wire-ABI validation test.
+    auto configureManifestCommand = command;
+    configureManifestCommand.command =
+        static_cast<std::uint16_t>(WorkerCommand::configureRuntimeManifest);
+    assert(hasValidWorkerCommand(configureManifestCommand));
+
+    // The command immediately beyond the current protocol range is rejected.
+    auto unknownFutureCommand = command;
+    unknownFutureCommand.command =
+        static_cast<std::uint16_t>(WorkerCommand::configureRuntimeManifest) + 1;
+    assert(!hasValidWorkerCommand(unknownFutureCommand));
     invalidCommand = command;
     invalidCommand.command = 99;
     assert(!hasValidWorkerCommand(invalidCommand));
