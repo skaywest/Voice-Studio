@@ -248,33 +248,30 @@ int wmain(int argc, wchar_t** argv)
         const std::wstring malformedPipe = L"\\\\.\\pipe\\VoiceStudioMalformedCommand-" +
                                            std::to_wstring(GetCurrentProcessId());
         WindowsWorkerControlPipe malformedServer;
-        if (!malformedServer.createServer(malformedPipe) ||
-            !malformedServer.waitForClient(10))
+        if (!malformedServer.createServer(malformedPipe))
+            return 16;
+        HANDLE rawClient = CreateFileW(malformedPipe.c_str(), GENERIC_READ | GENERIC_WRITE,
+            0, nullptr, OPEN_EXISTING, 0, nullptr);
+        if (rawClient == INVALID_HANDLE_VALUE)
+            return 17;
+        DWORD mode = PIPE_READMODE_MESSAGE;
+        if (!SetNamedPipeHandleState(rawClient, &mode, nullptr, nullptr) ||
+            !malformedServer.waitForClient(3000))
         {
-            // Connect a raw client after the server endpoint has been created.
-            HANDLE rawClient = CreateFileW(malformedPipe.c_str(), GENERIC_READ | GENERIC_WRITE,
-                0, nullptr, OPEN_EXISTING, 0, nullptr);
-            if (rawClient == INVALID_HANDLE_VALUE)
-                return 16;
-            DWORD mode = PIPE_READMODE_MESSAGE;
-            if (!SetNamedPipeHandleState(rawClient, &mode, nullptr, nullptr) ||
-                !malformedServer.waitForClient(3000))
-            {
-                CloseHandle(rawClient);
-                return 17;
-            }
-            unsigned char oversized[sizeof(WorkerCommandMessage) + 8]{};
-            DWORD written = 0;
-            const bool sent = WriteFile(rawClient, oversized, sizeof(oversized), &written, nullptr) != FALSE &&
-                              written == sizeof(oversized);
-            WorkerCommandMessage ignored{};
-            const bool accepted = malformedServer.receiveCommand(ignored, 1000);
-            const bool rejectedAsProtocol = !accepted && malformedServer.hasProtocolError();
             CloseHandle(rawClient);
-            malformedServer.close();
-            if (!sent || !rejectedAsProtocol)
-                return 18;
+            return 18;
         }
+        unsigned char oversized[sizeof(WorkerCommandMessage) + 8]{};
+        DWORD written = 0;
+        const bool sent = WriteFile(rawClient, oversized, sizeof(oversized), &written, nullptr) != FALSE &&
+                          written == sizeof(oversized);
+        WorkerCommandMessage ignored{};
+        const bool accepted = malformedServer.receiveCommand(ignored, 1000);
+        const bool rejectedAsProtocol = !accepted && malformedServer.hasProtocolError();
+        CloseHandle(rawClient);
+        malformedServer.close();
+        if (!sent || !rejectedAsProtocol)
+            return 19;
     }
 
     wchar_t executable[MAX_PATH]{};
