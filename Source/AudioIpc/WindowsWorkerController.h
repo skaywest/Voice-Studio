@@ -11,6 +11,7 @@
 #include "AudioBlockRealtimeAccess.h"
 #include "WindowsAudioBlockMapping.h"
 #include "WindowsWorkerControlPipe.h"
+#include "WorkerRuntimeManifestVerifier.h"
 #include "WindowsWorkerProcess.h"
 #include "WorkerControlCoordinator.h"
 
