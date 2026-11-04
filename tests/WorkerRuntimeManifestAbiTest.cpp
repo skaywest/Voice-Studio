@@ -80,6 +80,21 @@ int main()
     assert(!areWorkerRuntimeManifestPathsUnique(duplicate, 2));
     setPath(duplicate[1], u"RVC/INFER/LIB/INFER.PY");
     assert(!areWorkerRuntimeManifestPathsUnique(duplicate, 2));
+
+    // Reject file/directory prefix collisions, including case aliases.
+    WorkerRuntimeManifestEntry prefixCollision[2] = {
+        validEntry(u"runtime", WorkerRuntimeFileRole::runtimeSupport),
+        validEntry(u"runtime/infer.py", WorkerRuntimeFileRole::pythonSource)
+    };
+    assert(!areWorkerRuntimeManifestPathsUnique(prefixCollision, 2));
+    setPath(prefixCollision[0], u"Runtime");
+    assert(!areWorkerRuntimeManifestPathsUnique(prefixCollision, 2));
+
+    // Similar-looking sibling names are valid: no path-separator boundary.
+    setPath(prefixCollision[0], u"runtime");
+    setPath(prefixCollision[1], u"runtime2/infer.py");
+    assert(areWorkerRuntimeManifestPathsUnique(prefixCollision, 2));
+
     assert(!areWorkerRuntimeManifestPathsUnique(nullptr, 1));
     assert(!areWorkerRuntimeManifestPathsUnique(entries, kWorkerRuntimeManifestMaxEntries + 1));
     return 0;
