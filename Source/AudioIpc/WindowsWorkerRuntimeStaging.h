@@ -62,11 +62,13 @@ public:
     bool writeChunk(const WorkerRuntimeFileChunkHeader& chunk,
                     const void* payload) noexcept
     {
-        if (!active || payload == nullptr || sequence.isComplete())
+        if (!active)
             return false;
+        if (payload == nullptr || sequence.isComplete())
+            return fail();
         const auto index = sequence.currentEntryIndex();
         if (index >= manifestEntries.size() || chunk.entryIndex != index)
-            return false;
+            return fail();
         if (file == INVALID_HANDLE_VALUE && !openCurrentFile())
             return fail();
         if (!sequence.accept(chunk))
