@@ -76,13 +76,27 @@ int wmain()
     if (attributes == INVALID_FILE_ATTRIBUTES ||
         (attributes & FILE_ATTRIBUTE_DIRECTORY) != 0)
         return 4;
-    staging.cleanup();
+    // A handle that denies FILE_SHARE_DELETE simulates a cleanup failure.
+    // UNLOAD must not acknowledge READY while the staged tree remains.
+    HANDLE blocker = CreateFileW(stagedFile.c_str(), GENERIC_READ, FILE_SHARE_READ,
+        nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+    if (blocker == INVALID_HANDLE_VALUE)
+        return 12;
+    if (staging.cleanup())
+        return 13;
+    if (GetFileAttributesW(root.c_str()) == INVALID_FILE_ATTRIBUTES)
+        return 14;
+    if (!CloseHandle(blocker))
+        return 15;
+    if (!staging.cleanup())
+        return 16;
     if (GetFileAttributesW(root.c_str()) != INVALID_FILE_ATTRIBUTES)
         return 5;
     // The same staging object can start a fresh transfer after UNLOAD cleanup.
     if (!staging.begin(header, &entry, 1))
         return 11;
-    staging.cleanup();
+    if (!staging.cleanup())
+        return 17;
 
     // A self-consistent manifest with a false file digest must not be staged
     // as complete; failure also removes the partial tree.

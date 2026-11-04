@@ -230,7 +230,12 @@ int runWorker(const std::wstring& pipeName, const std::wstring& mappingName,
                 // staged files. Otherwise unload acknowledged READY while the
                 // model checkpoint remained pinned for the Worker lifetime.
                 verifiedModelFiles.reset();
-                runtimeStaging.cleanup();
+                if (!runtimeStaging.cleanup())
+                {
+                    pipe.sendStatus(makeStatus(WorkerState::error, WorkerResult::internalError,
+                                               generation, activeRequestId), 1000);
+                    return 26;
+                }
             }
             if (!pipe.sendStatus(makeStatus(WorkerState::ready, WorkerResult::ok,
                                             generation, activeRequestId), 1000))

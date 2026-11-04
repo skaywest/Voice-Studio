@@ -34,7 +34,8 @@ public:
                const WorkerRuntimeManifestEntry* entries,
                std::size_t count) noexcept
     {
-        if (active || entries == nullptr ||
+        if (active || !root.empty() || !createdFiles.empty() ||
+            !createdDirectories.empty() || entries == nullptr ||
             !hasValidWorkerRuntimeManifestDigest(header, entries, count))
             return false;
         try
@@ -98,27 +99,64 @@ public:
     const std::wstring& rootPath() const noexcept { return root; }
     std::size_t verifiedFileCount() const noexcept { return verifiedFiles; }
 
-    void cleanup() noexcept
+    bool cleanup() noexcept
     {
         if (file != INVALID_HANDLE_VALUE)
         {
-            CloseHandle(file);
+            if (!CloseHandle(file))
+                return false;
             file = INVALID_HANDLE_VALUE;
         }
-        for (auto it = createdFiles.rbegin(); it != createdFiles.rend(); ++it)
-            DeleteFileW(it->c_str());
-        createdFiles.clear();
-        for (auto it = createdDirectories.rbegin(); it != createdDirectories.rend(); ++it)
-            RemoveDirectoryW(it->c_str());
-        createdDirectories.clear();
+
+        bool removedAll = true;
+        for (std::size_t i = createdFiles.size(); i > 0; --i)
+        {
+            const auto& path = createdFiles[i - 1];
+            if (DeleteFileW(path.c_str()))
+                createdFiles.erase(createdFiles.begin() + static_cast<std::ptrdiff_t>(i - 1));
+            else
+            {
+                const DWORD error = GetLastError();
+                if (error == ERROR_FILE_NOT_FOUND || error == ERROR_PATH_NOT_FOUND)
+                    createdFiles.erase(createdFiles.begin() + static_cast<std::ptrdiff_t>(i - 1));
+                else
+                    removedAll = false;
+            }
+        }
+        for (std::size_t i = createdDirectories.size(); i > 0; --i)
+        {
+            const auto& path = createdDirectories[i - 1];
+            if (RemoveDirectoryW(path.c_str()))
+                createdDirectories.erase(createdDirectories.begin() + static_cast<std::ptrdiff_t>(i - 1));
+            else
+            {
+                const DWORD error = GetLastError();
+                if (error == ERROR_FILE_NOT_FOUND || error == ERROR_PATH_NOT_FOUND)
+                    createdDirectories.erase(createdDirectories.begin() + static_cast<std::ptrdiff_t>(i - 1));
+                else
+                    removedAll = false;
+            }
+        }
         if (!root.empty())
-            RemoveDirectoryW(root.c_str());
-        root.clear();
+        {
+            if (RemoveDirectoryW(root.c_str()))
+                root.clear();
+            else
+            {
+                const DWORD error = GetLastError();
+                if (error == ERROR_FILE_NOT_FOUND || error == ERROR_PATH_NOT_FOUND)
+                    root.clear();
+                else
+                    removedAll = false;
+            }
+        }
+
         manifestEntries.clear();
         sequence = WorkerRuntimeTransferSequence{};
         active = false;
         verifiedFiles = 0;
         currentFilePath.clear();
+        return removedAll && root.empty() && createdFiles.empty() && createdDirectories.empty();
     }
 
 private:
