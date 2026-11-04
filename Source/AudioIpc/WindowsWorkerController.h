@@ -255,7 +255,21 @@ public:
     {
         if (!active)
             return false;
-        return execute(coordinator.unloadNow(timeoutMs), timeoutMs);
+
+        // UNLOAD is a synchronous lifecycle boundary: do not report success
+        // while the Worker still owns model handles or staged runtime files.
+        const auto decision = coordinator.unloadNow(timeoutMs);
+        if (decision.action != WorkerLifecycleAction::sendUnloadNow ||
+            !decision.hasCommand || !pipe.sendCommand(decision.command, timeoutMs))
+            return terminateAndFault();
+
+        WorkerStatusMessage status{};
+        if (!pipe.receiveStatus(status, timeoutMs) ||
+            !coordinator.acceptStatus(status) ||
+            coordinator.currentState() == WorkerLifecycleState::faulted)
+            return terminateAndFault();
+
+        return coordinator.currentState() == WorkerLifecycleState::ready;
     }
 
     bool workerHasExited() const noexcept { return process.hasExited(); }
