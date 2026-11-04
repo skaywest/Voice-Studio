@@ -10,6 +10,8 @@ inline constexpr std::size_t kWorkerRuntimeManifestMaxEntries = 512;
 inline constexpr std::size_t kWorkerRuntimeManifestPathCapacity = 512;
 inline constexpr std::uint64_t kWorkerRuntimeManifestMaxFileBytes = 8ull * 1024ull * 1024ull * 1024ull;
 inline constexpr std::uint64_t kWorkerRuntimeManifestMaxTotalBytes = 32ull * 1024ull * 1024ull * 1024ull;
+inline constexpr std::uint32_t kWorkerRuntimeFileChunkMaxBytes = 8192;
+inline constexpr std::uint16_t kWorkerRuntimeFileChunkFlagFinal = 1;
 
 enum class WorkerRuntimeFileRole : std::uint16_t
 {
@@ -35,6 +37,32 @@ struct WorkerRuntimeManifestHeader
     std::uint64_t totalBytes = 0;
     std::uint8_t manifestSha256[32]{};
 };
+
+// A file is streamed only after the complete manifest has passed digest
+// validation. Each chunk is a separate bounded pipe message.
+struct WorkerRuntimeFileChunkHeader
+{
+    std::uint32_t entryIndex = 0;
+    std::uint32_t payloadBytes = 0;
+    std::uint64_t offsetBytes = 0;
+    std::uint16_t flags = 0;
+    std::uint16_t size = 0;
+    std::uint32_t reserved = 0;
+};
+
+inline bool hasValidWorkerRuntimeFileChunkHeader(
+    const WorkerRuntimeFileChunkHeader& chunk) noexcept
+{
+    return chunk.size == sizeof(WorkerRuntimeFileChunkHeader) &&
+        chunk.entryIndex < kWorkerRuntimeManifestMaxEntries &&
+        chunk.payloadBytes > 0 && chunk.payloadBytes <= kWorkerRuntimeFileChunkMaxBytes &&
+        chunk.offsetBytes <= kWorkerRuntimeManifestMaxFileBytes &&
+        chunk.payloadBytes <= kWorkerRuntimeManifestMaxFileBytes - chunk.offsetBytes &&
+        (chunk.flags & ~kWorkerRuntimeFileChunkFlagFinal) == 0 &&
+        chunk.reserved == 0;
+}
+static_assert(sizeof(WorkerRuntimeFileChunkHeader) == 24,
+              "Runtime file chunk wire size is fixed");
 
 struct WorkerRuntimeManifestEntry
 {

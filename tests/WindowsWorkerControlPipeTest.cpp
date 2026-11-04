@@ -202,6 +202,36 @@ int wmain(int argc, wchar_t** argv)
             receivedEntries[0].relativePath[0] != u'w')
             return 11;
 
+        // Bounded chunk transport round-trip; staging and file writes are
+        // intentionally separate from this transport-level test.
+        WorkerRuntimeFileChunkHeader chunk{};
+        chunk.entryIndex = 0;
+        chunk.payloadBytes = 5;
+        chunk.offsetBytes = 0;
+        chunk.flags = kWorkerRuntimeFileChunkFlagFinal;
+        chunk.size = static_cast<std::uint16_t>(sizeof(chunk));
+        const std::uint8_t chunkPayload[5] = { 1, 2, 3, 4, 5 };
+        if (!client.sendRuntimeFileChunk(chunk, chunkPayload, 3000))
+            return 12;
+        WorkerRuntimeFileChunkHeader receivedChunk{};
+        std::uint8_t receivedPayload[kWorkerRuntimeFileChunkMaxBytes]{};
+        if (!server.receiveRuntimeFileChunk(receivedChunk, receivedPayload,
+                                             sizeof(receivedPayload), 3000) ||
+            receivedChunk.entryIndex != 0 || receivedChunk.offsetBytes != 0 ||
+            receivedChunk.payloadBytes != sizeof(chunkPayload) ||
+            receivedChunk.flags != kWorkerRuntimeFileChunkFlagFinal ||
+            receivedPayload[0] != 1 || receivedPayload[4] != 5)
+            return 13;
+
+        auto invalidChunk = chunk;
+        invalidChunk.payloadBytes = kWorkerRuntimeFileChunkMaxBytes + 1;
+        if (hasValidWorkerRuntimeFileChunkHeader(invalidChunk))
+            return 14;
+        invalidChunk = chunk;
+        invalidChunk.flags = 2;
+        if (hasValidWorkerRuntimeFileChunkHeader(invalidChunk))
+            return 15;
+
         auto invalidConfig = modelConfig;
         invalidConfig.flags &= ~kWorkerModelConfigFlagVoiceRightsConfirmed;
         if (client.sendModelConfig(invalidConfig, 100))

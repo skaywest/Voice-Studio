@@ -200,6 +200,35 @@ public:
         return true;
     }
 
+    // Transfer one bounded file chunk after the manifest digest has been
+    // accepted. Header and payload are separate message-mode pipe messages.
+    bool sendRuntimeFileChunk(const WorkerRuntimeFileChunkHeader& chunk,
+                              const void* payload, DWORD timeoutMs = 3000) noexcept
+    {
+        if (!connected || payload == nullptr ||
+            !hasValidWorkerRuntimeFileChunkHeader(chunk))
+            return false;
+        return writeMessage(&chunk, static_cast<DWORD>(sizeof(chunk)), timeoutMs) &&
+               writeMessage(payload, chunk.payloadBytes, timeoutMs);
+    }
+
+    bool receiveRuntimeFileChunk(WorkerRuntimeFileChunkHeader& output,
+                                 void* payload, std::uint32_t capacity,
+                                 DWORD timeoutMs = 3000) noexcept
+    {
+        if (!connected || payload == nullptr)
+            return false;
+        WorkerRuntimeFileChunkHeader chunk{};
+        if (!readExactMessage(&chunk, static_cast<DWORD>(sizeof(chunk)), timeoutMs) ||
+            !hasValidWorkerRuntimeFileChunkHeader(chunk) ||
+            chunk.payloadBytes > capacity)
+            return false;
+        if (!readExactMessage(payload, chunk.payloadBytes, timeoutMs))
+            return false;
+        output = chunk;
+        return true;
+    }
+
     bool receiveStatus(WorkerStatusMessage& output, DWORD timeoutMs = 3000) noexcept
     {
         WorkerStatusMessage message{};
