@@ -204,6 +204,14 @@ if(VOICE_STUDIO_BUILD_SMOKE_TESTS)
         add_test(NAME VoiceStudioWindowsWorkerProcessTest COMMAND VoiceStudioWindowsWorkerProcessTest)
         set_tests_properties(VoiceStudioWindowsWorkerProcessTest PROPERTIES TIMEOUT 20)
 
+        # Worker-owned staging validates streamed file sizes and SHA-256 before use.
+        add_executable(VoiceStudioWorkerRuntimeStagingTest tests/WindowsWorkerRuntimeStagingTest.cpp)
+        target_include_directories(VoiceStudioWorkerRuntimeStagingTest PRIVATE Source)
+        target_compile_features(VoiceStudioWorkerRuntimeStagingTest PRIVATE cxx_std_17)
+        target_link_libraries(VoiceStudioWorkerRuntimeStagingTest PRIVATE bcrypt)
+        add_test(NAME VoiceStudioWorkerRuntimeStagingTest COMMAND VoiceStudioWorkerRuntimeStagingTest)
+        set_tests_properties(VoiceStudioWorkerRuntimeStagingTest PROPERTIES TIMEOUT 20)
+
         # Verify selected model files by exact size and SHA-256 using Windows CNG.
         add_executable(VoiceStudioWorkerModelFileVerifierTest tests/WorkerModelFileVerifierTest.cpp)
         target_include_directories(VoiceStudioWorkerModelFileVerifierTest PRIVATE Source)
