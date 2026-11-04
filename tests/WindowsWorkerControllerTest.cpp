@@ -186,6 +186,37 @@ int wmain(int argc, wchar_t** argv)
         return 6;
     }
 
+    // A self-consistent manifest whose declared file hash is wrong must
+    // be rejected only after the Worker hashes the received staged bytes.
+    auto badRuntimeHeader = runtimeHeader;
+    auto badRuntimeEntry = runtimeEntry;
+    badRuntimeEntry.sha256[0] ^= 0x01u;
+    if (!computeWorkerRuntimeManifestSha256(badRuntimeHeader, &badRuntimeEntry, 1,
+                                            badRuntimeHeader.manifestSha256))
+    {
+        cleanup(root, entrypoint, model);
+        return 13;
+    }
+    const std::wstring badRuntimePipe = pipeName + L"-bad-runtime-hash";
+    WindowsWorkerController badRuntimeController;
+    if (!badRuntimeController.launch(executable, badRuntimePipe, monotonicNs(), 5000))
+    {
+        cleanup(root, entrypoint, model);
+        return 14;
+    }
+    const bool runtimeHashRejected =
+        !badRuntimeController.configureRuntimeFiles(badRuntimeHeader, &badRuntimeEntry, 1,
+                                                      runtimeSources, 5000) &&
+        badRuntimeController.currentState() == WorkerLifecycleState::faulted &&
+        !badRuntimeController.audioConversionAvailable();
+    badRuntimeController.shutdown();
+    if (!runtimeHashRejected)
+    {
+        std::fprintf(stderr, "controller-test: bad staged runtime hash was not rejected\\n");
+        cleanup(root, entrypoint, model);
+        return 15;
+    }
+
     // A syntactically valid manifest with a wrong digest must be rejected by
     // the Worker itself, and the controller must fail closed.
     auto tampered = config;
