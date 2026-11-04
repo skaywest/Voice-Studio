@@ -79,6 +79,10 @@ int wmain()
     staging.cleanup();
     if (GetFileAttributesW(root.c_str()) != INVALID_FILE_ATTRIBUTES)
         return 5;
+    // The same staging object can start a fresh transfer after UNLOAD cleanup.
+    if (!staging.begin(header, &entry, 1))
+        return 11;
+    staging.cleanup();
 
     // A self-consistent manifest with a false file digest must not be staged
     // as complete; failure also removes the partial tree.

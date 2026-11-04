@@ -115,6 +115,7 @@ public:
             RemoveDirectoryW(root.c_str());
         root.clear();
         manifestEntries.clear();
+        sequence = WorkerRuntimeTransferSequence{};
         active = false;
         verifiedFiles = 0;
         currentFilePath.clear();
