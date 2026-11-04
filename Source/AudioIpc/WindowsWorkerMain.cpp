@@ -232,7 +232,7 @@ int runWorker(const std::wstring& pipeName, const std::wstring& mappingName,
                 verifiedModelFiles.reset();
                 if (!runtimeStaging.cleanup())
                 {
-                    pipe.sendStatus(makeStatus(WorkerState::error, WorkerResult::internalError,
+                    pipe.sendStatus(makeStatus(WorkerState::error, WorkerResult::failed,
                                                generation, activeRequestId), 1000);
                     return 26;
                 }
