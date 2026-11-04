@@ -33,7 +33,6 @@ int main()
     manifest.size = static_cast<std::uint16_t>(sizeof(manifest));
     manifest.entryCount = 2;
     manifest.totalBytes = 9000;
-    manifest.manifestSha256[0] = 1; // Digest presence; cryptographic verification is a caller precondition.
 
     WorkerRuntimeManifestEntry entries[2]{};
     entries[0].role = static_cast<std::uint16_t>(WorkerRuntimeFileRole::pythonSource);
@@ -44,6 +43,10 @@ int main()
     entries[1].sizeBytes = 808;
     entries[1].sha256[0] = 2;
     setPath(entries[1], u"runtime/core.bin", 16);
+
+    // The transfer tracker verifies the canonical digest itself; callers cannot
+    // accidentally start a session with a merely non-zero, unauthenticated hash.
+    assert(computeWorkerRuntimeManifestSha256(manifest, entries, 2, manifest.manifestSha256));
 
     WorkerRuntimeTransferSequence transfer;
     assert(transfer.begin(manifest, entries, 2));
@@ -78,5 +81,12 @@ int main()
         badEntries[1].relativePath[i] = entries[0].relativePath[i];
     assert(!invalid.begin(manifest, badEntries, 2));
     assert(!invalid.isActive());
+
+    // A valid-looking but altered entry must not pass with the old digest.
+    auto alteredEntries = entries;
+    alteredEntries[1].sizeBytes += 1;
+    WorkerRuntimeTransferSequence altered;
+    assert(!altered.begin(manifest, alteredEntries, 2));
+    assert(!altered.isActive());
     return 0;
 }

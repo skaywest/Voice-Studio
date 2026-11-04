@@ -1,6 +1,7 @@
 #pragma once
 
 #include "WorkerRuntimeFileChunkSequence.h"
+#include "WorkerRuntimeManifestVerifier.h"
 
 #include <array>
 #include <cstddef>
@@ -18,7 +19,7 @@ public:
                const WorkerRuntimeManifestEntry* entries,
                std::size_t count) noexcept
     {
-        if (active || !hasValidWorkerRuntimeManifestEntries(header, entries, count))
+        if (active || !hasValidWorkerRuntimeManifestDigest(header, entries, count))
             return false;
 
         for (std::size_t i = 0; i < count; ++i)
