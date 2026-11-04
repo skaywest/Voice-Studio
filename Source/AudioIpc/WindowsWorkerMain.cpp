@@ -123,6 +123,12 @@ int runWorker(const std::wstring& pipeName, const std::wstring& mappingName,
         WorkerCommandMessage command{};
         if (!pipe.receiveCommand(command, 10))
         {
+            if (pipe.hasProtocolError())
+            {
+                pipe.sendStatus(makeStatus(WorkerState::error, WorkerResult::invalidRequest,
+                                           generation, activeRequestId), 1000);
+                return 25;
+            }
             transferAvailableAudioBlocks(*audioMapping.get(), generation, monotonicNs());
             const auto now = monotonicNs();
             if (now - lastHeartbeatNs >= 500'000'000ull)

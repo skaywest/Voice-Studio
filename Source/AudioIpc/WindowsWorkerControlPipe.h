@@ -248,12 +248,30 @@ public:
     bool receiveCommand(WorkerCommandMessage& output, DWORD timeoutMs = 3000) noexcept
     {
         WorkerCommandMessage message{};
-        if (!connected || !readExactMessage(&message, static_cast<DWORD>(sizeof(message)), timeoutMs) ||
-            !hasValidWorkerCommand(message))
+        if (!connected)
+        {
+            protocolError = true;
             return false;
+        }
+        if (!readExactMessage(&message, static_cast<DWORD>(sizeof(message)), timeoutMs))
+        {
+            // An idle timeout is expected while the Worker is polling. Any
+            // other read failure (including ERROR_MORE_DATA or a short frame)
+            // is a protocol failure; the caller must terminate this session.
+            if (lastTransferError != WAIT_TIMEOUT)
+                protocolError = true;
+            return false;
+        }
+        if (!hasValidWorkerCommand(message))
+        {
+            protocolError = true;
+            return false;
+        }
         output = message;
         return true;
     }
+
+    bool hasProtocolError() const noexcept { return protocolError; }
 
     void disconnect() noexcept
     {
@@ -295,10 +313,14 @@ private:
     bool transfer(bool writing, const void* source, void* destination,
                   DWORD size, DWORD timeoutMs, DWORD& transferred) noexcept
     {
+        lastTransferError = ERROR_SUCCESS;
         OVERLAPPED operation{};
         operation.hEvent = CreateEventW(nullptr, TRUE, FALSE, nullptr);
         if (operation.hEvent == nullptr)
+        {
+            lastTransferError = GetLastError();
             return false;
+        }
 
         BOOL completed = writing
             ? WriteFile(pipe, source, size, &transferred, &operation)
@@ -309,6 +331,7 @@ private:
             const DWORD error = GetLastError();
             if (error != ERROR_IO_PENDING)
             {
+                lastTransferError = error;
                 CloseHandle(operation.hEvent);
                 return false;
             }
@@ -321,10 +344,14 @@ private:
                 // raced with it; this is especially important for short Worker
                 // command-poll intervals on the receiving side.
                 const bool completedDuringTimeout = cancelAndDrain(operation, transferred);
+                if (!completedDuringTimeout)
+                    lastTransferError = wait == WAIT_TIMEOUT ? WAIT_TIMEOUT : GetLastError();
                 CloseHandle(operation.hEvent);
                 return completedDuringTimeout;
             }
             completed = GetOverlappedResult(pipe, &operation, &transferred, FALSE);
+            if (!completed)
+                lastTransferError = GetLastError();
         }
 
         CloseHandle(operation.hEvent);
@@ -340,12 +367,23 @@ private:
     bool readExactMessage(void* data, DWORD expectedSize, DWORD timeoutMs) noexcept
     {
         DWORD received = 0;
-        return transfer(false, nullptr, data, expectedSize, timeoutMs, received) &&
-               received == expectedSize;
+        if (!transfer(false, nullptr, data, expectedSize, timeoutMs, received))
+            return false;
+        if (received != expectedSize)
+        {
+            // In message mode a short frame is consumed, while an oversized
+            // frame is reported by ERROR_MORE_DATA. Neither is a retryable
+            // empty poll.
+            protocolError = true;
+            return false;
+        }
+        return true;
     }
 
     HANDLE pipe = INVALID_HANDLE_VALUE;
     bool connected = false;
     bool serverEndpoint = false;
+    DWORD lastTransferError = ERROR_SUCCESS;
+    bool protocolError = false;
 };
 } // namespace voice_studio::ipc
