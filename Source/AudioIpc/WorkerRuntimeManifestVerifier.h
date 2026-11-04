@@ -10,6 +10,7 @@
 #include "WorkerRuntimeManifestAbi.h"
 #include <cstdint>
 #include <iterator>
+#include <limits>
 #include <vector>
 
 namespace voice_studio::ipc
@@ -70,7 +71,7 @@ inline bool computeWorkerRuntimeManifestSha256(
         sizeof(objectBytes),&returned,0)<0 || returned!=sizeof(objectBytes) || objectBytes==0) goto cleanup;
     try { hashObject.resize(objectBytes); } catch(...) { goto cleanup; }
     if(BCryptCreateHash(algorithm,&hash,hashObject.data(),objectBytes,nullptr,0,0)<0) goto cleanup;
-    if(canonical.size()>MAXULONG ||
+    if(canonical.size()>static_cast<std::size_t>(std::numeric_limits<ULONG>::max()) ||
        BCryptHashData(hash,canonical.data(),static_cast<ULONG>(canonical.size()),0)<0) goto cleanup;
     if(BCryptFinishHash(hash,output,32,0)<0) goto cleanup;
     ok=true;
