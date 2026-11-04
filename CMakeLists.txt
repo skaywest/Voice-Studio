@@ -117,6 +117,13 @@ if(VOICE_STUDIO_BUILD_SMOKE_TESTS)
     target_compile_features(VoiceStudioWorkerRuntimeManifestAbiTest PRIVATE cxx_std_17)
     add_test(NAME VoiceStudioWorkerRuntimeManifestAbiTest COMMAND VoiceStudioWorkerRuntimeManifestAbiTest)
 
+    # Canonical SHA-256 integrity validation for ordered runtime manifests.
+    add_executable(VoiceStudioWorkerRuntimeManifestVerifierTest tests/WorkerRuntimeManifestVerifierTest.cpp)
+    target_include_directories(VoiceStudioWorkerRuntimeManifestVerifierTest PRIVATE Source)
+    target_compile_features(VoiceStudioWorkerRuntimeManifestVerifierTest PRIVATE cxx_std_17)
+    target_link_libraries(VoiceStudioWorkerRuntimeManifestVerifierTest PRIVATE bcrypt)
+    add_test(NAME VoiceStudioWorkerRuntimeManifestVerifierTest COMMAND VoiceStudioWorkerRuntimeManifestVerifierTest)
+
     # Stable, versioned local command contract for future FIFINE D6 / hotkey integrations.
     add_executable(VoiceStudioVoiceControlAbiTest tests/VoiceControlCommandAbiTest.cpp)
     target_include_directories(VoiceStudioVoiceControlAbiTest PRIVATE Source)
