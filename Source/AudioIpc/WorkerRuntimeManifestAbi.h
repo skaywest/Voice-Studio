@@ -63,8 +63,38 @@ inline char16_t runtimeManifestLower(char16_t value) noexcept
         ? static_cast<char16_t>(value + (u'a' - u'A')) : value;
 }
 
-// Paths use normalized forward slashes only. No absolute paths, drive/UNC
-// prefixes, empty components, dot segments, ADS, control chars or trailing slash.
+// Staged names are deliberately restricted to portable ASCII. This avoids
+// Unicode case-folding aliases and Windows filename normalization surprises.
+// Components also reject DOS device names and trailing dots/spaces.
+inline bool isReservedRuntimePathComponent(const char16_t* path,
+                                           std::size_t start,
+                                           std::size_t length) noexcept
+{
+    std::size_t baseLength = 0;
+    while (baseLength < length && path[start + baseLength] != u'.') ++baseLength;
+    if (baseLength == 3)
+    {
+        const auto a = runtimeManifestLower(path[start]);
+        const auto b = runtimeManifestLower(path[start + 1]);
+        const auto c = runtimeManifestLower(path[start + 2]);
+        if ((a == u'c' && b == u'o' && c == u'n') ||
+            (a == u'p' && b == u'r' && c == u'n') ||
+            (a == u'a' && b == u'u' && c == u'x') ||
+            (a == u'n' && b == u'u' && c == u'l')) return true;
+    }
+    if (baseLength == 4)
+    {
+        const auto a = runtimeManifestLower(path[start]);
+        const auto b = runtimeManifestLower(path[start + 1]);
+        const auto c = runtimeManifestLower(path[start + 2]);
+        const auto d = runtimeManifestLower(path[start + 3]);
+        const bool prefix = (a == u'c' && b == u'o' && c == u'm') ||
+                            (a == u'l' && b == u'p' && c == u't');
+        if (prefix && d >= u'1' && d <= u'9') return true;
+    }
+    return false;
+}
+
 inline bool hasSafeRuntimeRelativePath(const char16_t* path, std::uint16_t length) noexcept
 {
     if (path == nullptr || length == 0 || length >= kWorkerRuntimeManifestPathCapacity)
@@ -76,16 +106,21 @@ inline bool hasSafeRuntimeRelativePath(const char16_t* path, std::uint16_t lengt
         if (i < length)
         {
             const auto ch = path[i];
-            if (ch == 0 || ch < 0x20 || ch == u'\\' || ch == u':' ||
-                ch == u'<' || ch == u'>' || ch == u'"' || ch == u'|' ||
-                ch == u'?' || ch == u'*') return false;
+            const bool asciiAlpha = (ch >= u'A' && ch <= u'Z') ||
+                                    (ch >= u'a' && ch <= u'z');
+            const bool asciiDigit = ch >= u'0' && ch <= u'9';
+            if (!(asciiAlpha || asciiDigit || ch == u'_' || ch == u'-' ||
+                  ch == u'.' || ch == u'/')) return false;
             if (ch != u'/') continue;
         }
         const auto componentLength = i - componentStart;
         if (componentLength == 0 ||
             (componentLength == 1 && path[componentStart] == u'.') ||
             (componentLength == 2 && path[componentStart] == u'.' &&
-             path[componentStart + 1] == u'.')) return false;
+             path[componentStart + 1] == u'.') ||
+            path[i - 1] == u'.' ||
+            isReservedRuntimePathComponent(path, componentStart, componentLength))
+            return false;
         componentStart = i + 1;
     }
     return true;
@@ -136,3 +171,21 @@ inline bool areWorkerRuntimeManifestPathsUnique(
     return true;
 }
 } // namespace voice_studio::ipc
+
+inline bool hasValidWorkerRuntimeManifestEntries(
+    const WorkerRuntimeManifestHeader& header,
+    const WorkerRuntimeManifestEntry* entries,
+    std::size_t count) noexcept
+{
+    if (!hasValidWorkerRuntimeManifestHeader(header) || entries == nullptr ||
+        count != header.entryCount || !areWorkerRuntimeManifestPathsUnique(entries, count))
+        return false;
+    std::uint64_t total = 0;
+    for (std::size_t i = 0; i < count; ++i)
+    {
+        if (entries[i].sizeBytes > kWorkerRuntimeManifestMaxTotalBytes - total)
+            return false;
+        total += entries[i].sizeBytes;
+    }
+    return total == header.totalBytes;
+}

@@ -46,6 +46,10 @@ int main()
     };
     assert(hasValidWorkerRuntimeManifestEntry(entries[0]));
     assert(areWorkerRuntimeManifestPathsUnique(entries, 2));
+    assert(hasValidWorkerRuntimeManifestEntries(h, entries, 2));
+    auto inconsistentHeader = h; inconsistentHeader.totalBytes = 85;
+    assert(!hasValidWorkerRuntimeManifestEntries(inconsistentHeader, entries, 2));
+    assert(!hasValidWorkerRuntimeManifestEntries(h, entries, 1));
     auto invalid = entries[0]; setPath(invalid, u"../escape.py");
     assert(!hasValidWorkerRuntimeManifestEntry(invalid));
     setPath(invalid, u"rvc//infer.py"); assert(!hasValidWorkerRuntimeManifestEntry(invalid));
@@ -56,6 +60,12 @@ int main()
     setPath(invalid, u"rvc\\infer.py"); assert(!hasValidWorkerRuntimeManifestEntry(invalid));
     setPath(invalid, u"rvc/model.pth:stream"); assert(!hasValidWorkerRuntimeManifestEntry(invalid));
     setPath(invalid, u"rvc/infer.py/"); assert(!hasValidWorkerRuntimeManifestEntry(invalid));
+    setPath(invalid, u"rvc/CON.txt"); assert(!hasValidWorkerRuntimeManifestEntry(invalid));
+    setPath(invalid, u"rvc/aux.dll"); assert(!hasValidWorkerRuntimeManifestEntry(invalid));
+    setPath(invalid, u"rvc/LPT9.bin"); assert(!hasValidWorkerRuntimeManifestEntry(invalid));
+    setPath(invalid, u"rvc/model.pth."); assert(!hasValidWorkerRuntimeManifestEntry(invalid));
+    setPath(invalid, u"rvc/model name.pth"); assert(!hasValidWorkerRuntimeManifestEntry(invalid));
+    setPath(invalid, u"rvc/голос.pth"); assert(!hasValidWorkerRuntimeManifestEntry(invalid));
     invalid = entries[0]; invalid.role = 0; assert(!hasValidWorkerRuntimeManifestEntry(invalid));
     invalid = entries[0]; invalid.reserved = 1; assert(!hasValidWorkerRuntimeManifestEntry(invalid));
     invalid = entries[0]; invalid.sha256[0] = 0; assert(!hasValidWorkerRuntimeManifestEntry(invalid));
