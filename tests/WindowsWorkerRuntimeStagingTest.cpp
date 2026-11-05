@@ -1,6 +1,8 @@
 #include "AudioIpc/WindowsWorkerRuntimeStaging.h"
 
 #include <windows.h>
+#include <aclapi.h>
+#include <sddl.h>
 
 #include <cstdint>
 #include <string>
@@ -86,11 +88,11 @@ int wmain()
     const bool protectedDacl = GetSecurityDescriptorControl(
         securityDescriptor, &control, &revision) && (control & SE_DACL_PROTECTED) != 0;
     BYTE systemSid[SECURITY_MAX_SID_SIZE]{};
-    BYTE ownerSid[SECURITY_MAX_SID_SIZE]{};
-    DWORD systemSidBytes = sizeof(systemSid), ownerSidBytes = sizeof(ownerSid);
+    PSID ownerSid = nullptr;
+    DWORD systemSidBytes = sizeof(systemSid);
     const bool knownSids =
         CreateWellKnownSid(WinLocalSystemSid, nullptr, systemSid, &systemSidBytes) &&
-        CreateWellKnownSid(WinOwnerRightsSid, nullptr, ownerSid, &ownerSidBytes);
+        ConvertStringSidToSidW(L"S-1-3-4", &ownerSid) != FALSE;
     bool systemAllowed = false, ownerAllowed = false, onlyExpectedAces = dacl != nullptr;
     if (dacl != nullptr)
     {
@@ -115,6 +117,7 @@ int wmain()
         }
     }
     const DWORD aceCount = dacl != nullptr ? dacl->AceCount : 0;
+    if (ownerSid != nullptr) LocalFree(ownerSid);
     if (securityDescriptor) LocalFree(securityDescriptor);
     if (!protectedDacl || !knownSids || !systemAllowed || !ownerAllowed ||
         !onlyExpectedAces || aceCount != 2)

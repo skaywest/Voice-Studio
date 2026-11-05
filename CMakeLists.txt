@@ -208,7 +208,7 @@ if(VOICE_STUDIO_BUILD_SMOKE_TESTS)
         add_executable(VoiceStudioWorkerRuntimeStagingTest tests/WindowsWorkerRuntimeStagingTest.cpp)
         target_include_directories(VoiceStudioWorkerRuntimeStagingTest PRIVATE Source)
         target_compile_features(VoiceStudioWorkerRuntimeStagingTest PRIVATE cxx_std_17)
-        target_link_libraries(VoiceStudioWorkerRuntimeStagingTest PRIVATE bcrypt)
+        target_link_libraries(VoiceStudioWorkerRuntimeStagingTest PRIVATE advapi32 bcrypt)
         add_test(NAME VoiceStudioWorkerRuntimeStagingTest COMMAND VoiceStudioWorkerRuntimeStagingTest)
         set_tests_properties(VoiceStudioWorkerRuntimeStagingTest PROPERTIES TIMEOUT 20)
 
