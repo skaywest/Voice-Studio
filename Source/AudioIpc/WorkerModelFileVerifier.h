@@ -29,13 +29,25 @@ struct VerifiedModelFiles
     VerifiedModelFiles& operator=(const VerifiedModelFiles&) = delete;
     ~VerifiedModelFiles() { reset(); }
 
-    void reset() noexcept
+    bool reset() noexcept
     {
-        if (index != INVALID_HANDLE_VALUE) CloseHandle(index);
-        if (model != INVALID_HANDLE_VALUE) CloseHandle(model);
-        if (entrypoint != INVALID_HANDLE_VALUE) CloseHandle(entrypoint);
-        if (root != INVALID_HANDLE_VALUE) CloseHandle(root);
-        index = model = entrypoint = root = INVALID_HANDLE_VALUE;
+        bool allClosed = true;
+        const auto closeOne = [&allClosed](HANDLE& handle) noexcept
+        {
+            if (handle == INVALID_HANDLE_VALUE)
+                return;
+            if (CloseHandle(handle))
+                handle = INVALID_HANDLE_VALUE;
+            else
+                allClosed = false;
+        };
+        closeOne(index);
+        closeOne(model);
+        closeOne(entrypoint);
+        closeOne(root);
+        return allClosed && index == INVALID_HANDLE_VALUE &&
+            model == INVALID_HANDLE_VALUE && entrypoint == INVALID_HANDLE_VALUE &&
+            root == INVALID_HANDLE_VALUE;
     }
 };
 
@@ -203,8 +215,8 @@ inline bool verifyModelFile(const char16_t* path, std::uint16_t pathLength,
 inline bool verifyWorkerModelConfigFiles(const WorkerModelConfigMessage& config,
                                          VerifiedModelFiles& verified) noexcept
 {
-    verified.reset();
-    if (!hasValidWorkerModelConfig(config)) return false;
+    if (!verified.reset() || !hasValidWorkerModelConfig(config))
+        return false;
     std::wstring rootPath;
     try { rootPath.assign(reinterpret_cast<const wchar_t*>(config.rootPath), config.rootPathLength); }
     catch (...) { return false; }
