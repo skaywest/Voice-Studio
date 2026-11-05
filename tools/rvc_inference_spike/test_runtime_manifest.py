@@ -86,7 +86,7 @@ class RuntimeManifestTests(unittest.TestCase):
                 build_manifest(root)
 
     def test_rejects_windows_path_aliases(self):
-        for path in ("CON.txt", "nul", "COM1.log", "LPT9.data", "COM¹.pth", "COM².pth", "COM³.pth", "LPT¹.pth", "LPT².pth", "LPT³.pth"):
+        for path in ("CON.txt", "nul", "COM1.log", "LPT9.data", *(f"COM{chr(n)}.pth" for n in (0x00B9, 0x00B2, 0x00B3)), *(f"LPT{chr(n)}.pth" for n in (0x00B9, 0x00B2, 0x00B3))):
             with self.subTest(path=path):
                 with self.assertRaisesRegex(ManifestError, "reserved Windows"):
                     _safe_relative_path(path)

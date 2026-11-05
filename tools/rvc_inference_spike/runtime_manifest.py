@@ -43,17 +43,18 @@ class ManifestError(ValueError):
 def _safe_relative_path(path: str) -> None:
     if not path or len(path.encode("utf-16-le")) // 2 > MAX_PATH_UNITS:
         raise ManifestError(f"invalid or overlong relative path: {path!r}")
-    if not path.isascii() or "\\" in path or path.startswith("/") or path.endswith("/"):
-        raise ManifestError(f"path is not portable ASCII relative form: {path!r}")
+    if "\\" in path or path.startswith("/") or path.endswith("/"):
+        raise ManifestError(f"path is not portable relative form: {path!r}")
     if DRIVE_PREFIX.match(path):
         raise ManifestError(f"drive-qualified path is forbidden: {path!r}")
     for component in path.split("/"):
         if component in ("", ".", "..") or component.endswith((".", " ")):
             raise ManifestError(f"unsafe path component: {component!r}")
         base = component.split(".", 1)[0].upper()
-        if base in {"CON", "PRN", "AUX", "NUL"} or re.fullmatch(r"(COM|LPT)([1-9]|[¹²³])", base):
+        device_suffix = r"([1-9]|" + chr(0x00B9) + chr(0x00B2) + chr(0x00B3) + r")"
+        if base in {"CON", "PRN", "AUX", "NUL"} or re.fullmatch(r"(COM|LPT)" + device_suffix, base):
             raise ManifestError(f"reserved Windows path component: {component!r}")
-        if not re.fullmatch(r"[A-Za-z0-9_.-]+", component):
+        if not component.isascii() or not re.fullmatch(r"[A-Za-z0-9_.-]+", component):
             raise ManifestError(f"unsupported path component: {component!r}")
 
 

@@ -99,7 +99,10 @@ def validate_catalog(data: Any) -> dict[str, Any]:
             file_prefix = f"{prefix}.files[{file_index}]"
             if not isinstance(item, dict):
                 raise CatalogError(f"{file_prefix} must be an object")
-            filename = _require_text(item.get("filename"), f"{file_prefix}.filename", maximum=128)
+            raw_filename = item.get("filename")
+            if isinstance(raw_filename, str) and raw_filename != raw_filename.strip():
+                raise CatalogError(f"{file_prefix}.filename must not contain leading or trailing whitespace")
+            filename = _require_text(raw_filename, f"{file_prefix}.filename", maximum=128)
             if (filename in {".", ".."} or Path(filename).name != filename
                     or "/" in filename or "\\" in filename
                     or filename.endswith((".", " "))
