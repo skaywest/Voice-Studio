@@ -77,10 +77,15 @@ int main()
     assert(control.currentState() == WorkerLifecycleState::coolingDown);
     assert(!control.audioConversionAvailable());
 
-    const auto beforeUnload = control.tick(400 + WorkerLifecycle::kCooldownNs - 1);
+    // Simulate a live Worker heartbeat while testing the longer cooldown.
+    const auto beforeDeadline = 400 + WorkerLifecycle::kCooldownNs - 1;
+    assert(control.acceptStatus(makeStatus(control, WorkerState::ready, beforeDeadline)));
+    const auto beforeUnload = control.tick(beforeDeadline);
     assert(beforeUnload.action == WorkerLifecycleAction::none);
     assert(!beforeUnload.hasCommand);
 
+    assert(control.acceptStatus(makeStatus(control, WorkerState::ready,
+                                           400 + WorkerLifecycle::kCooldownNs)));
     const auto unload = control.tick(400 + WorkerLifecycle::kCooldownNs);
     assert(unload.action == WorkerLifecycleAction::sendUnloadNow);
     assert(unload.hasCommand);

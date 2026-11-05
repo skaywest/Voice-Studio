@@ -86,7 +86,15 @@ int main()
     assert(lifecycle.acceptStatus(statusFor(lifecycle, WorkerState::ready, 500)));
     assert(lifecycle.currentState() == WorkerLifecycleState::coolingDown);
     assert(!lifecycle.isAudioConversionAvailable());
-    assert(lifecycle.tick(400 + WorkerLifecycle::kCooldownNs - 1) == WorkerLifecycleAction::none);
+
+    // Keep the simulated Worker heartbeat alive while the cooldown elapses.
+    // tick() enforces a 3-second heartbeat timeout independently of the
+    // 30-second model-retention deadline.
+    const auto beforeDeadline = 400 + WorkerLifecycle::kCooldownNs - 1;
+    assert(lifecycle.acceptStatus(statusFor(lifecycle, WorkerState::ready, beforeDeadline)));
+    assert(lifecycle.tick(beforeDeadline) == WorkerLifecycleAction::none);
+    assert(lifecycle.acceptStatus(statusFor(lifecycle, WorkerState::ready,
+                                            400 + WorkerLifecycle::kCooldownNs)));
     assert(lifecycle.tick(400 + WorkerLifecycle::kCooldownNs) == WorkerLifecycleAction::sendUnloadNow);
     assert(lifecycle.currentState() == WorkerLifecycleState::unloading);
     assert(makeWorkerCommand(WorkerLifecycleAction::sendUnloadNow, lifecycle, 5000, command));
