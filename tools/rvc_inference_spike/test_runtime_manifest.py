@@ -3,6 +3,7 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from runtime_manifest import (
     ManifestError, build_manifest, _canonical_digest,
@@ -51,6 +52,16 @@ class RuntimeManifestTests(unittest.TestCase):
             (root / "infer" / "rtrvc.py").write_text("changed\n", encoding="utf-8")
             second = build_manifest(root)
         self.assertNotEqual(first["sha256"], second["sha256"])
+
+    def test_rejects_incomplete_directory_enumeration(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            def failing_walk(base, *, followlinks, onerror):
+                onerror(PermissionError("access denied"))
+                yield str(base), [], []
+            with patch("runtime_manifest.os.walk", side_effect=failing_walk):
+                with self.assertRaisesRegex(ManifestError, "cannot enumerate runtime directory"):
+                    build_manifest(root)
 
     def test_rejects_empty_files_and_empty_tree(self):
         with tempfile.TemporaryDirectory() as temp:
