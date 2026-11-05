@@ -8,6 +8,7 @@
 #endif
 #include <windows.h>
 #include <bcrypt.h>
+#include <sddl.h>
 
 #include "WorkerRuntimeTransferSequence.h"
 
@@ -208,11 +209,30 @@ private:
                 candidate += std::to_wstring(GetTickCount64());
                 candidate += L"-";
                 candidate += std::to_wstring(serial);
-                if (CreateDirectoryW(candidate.c_str(), nullptr))
+                // Do not inherit broad permissions from the shared temp
+                // directory. Keep the staging tree protected and inheritable:
+                // SYSTEM and the directory owner (the Worker identity) only.
+                PSECURITY_DESCRIPTOR descriptor = nullptr;
+                if (!ConvertStringSecurityDescriptorToSecurityDescriptorW(
+                        L"D:P(A;OICI;FA;;;SY)(A;OICI;FA;;;OW)",
+                        SDDL_REVISION_1, &descriptor, nullptr))
+                    return false;
+                SECURITY_ATTRIBUTES security{};
+                security.nLength = sizeof(security);
+                security.lpSecurityDescriptor = descriptor;
+                security.bInheritHandle = FALSE;
+                const BOOL created = CreateDirectoryW(candidate.c_str(), &security);
+                const DWORD createError = created ? ERROR_SUCCESS : GetLastError();
+                const auto freeResult = LocalFree(descriptor);
+                if (created)
                 {
                     root.swap(candidate);
+                    if (freeResult != nullptr)
+                        return false;
                     return true;
                 }
+                if (createError != ERROR_ALREADY_EXISTS)
+                    return false;
                 if (GetLastError() != ERROR_ALREADY_EXISTS)
                     return false;
             }

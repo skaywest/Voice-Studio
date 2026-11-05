@@ -66,6 +66,59 @@ int wmain()
     if (!staging.begin(header, &entry, 1))
         return 2;
     const std::wstring root = staging.rootPath();
+
+    // The staging root must have a protected DACL with only SYSTEM and
+    // OWNER RIGHTS entries; child content inherits this policy.
+    PACL dacl = nullptr;
+    PSECURITY_DESCRIPTOR securityDescriptor = nullptr;
+    HANDLE rootHandle = CreateFileW(root.c_str(), READ_CONTROL | FILE_READ_ATTRIBUTES,
+        FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr,
+        OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT, nullptr);
+    if (rootHandle == INVALID_HANDLE_VALUE)
+        return 18;
+    const DWORD securityResult = GetSecurityInfo(rootHandle, SE_FILE_OBJECT,
+        DACL_SECURITY_INFORMATION, nullptr, nullptr, &dacl, nullptr, &securityDescriptor);
+    CloseHandle(rootHandle);
+    if (securityResult != ERROR_SUCCESS)
+        return 18;
+    SECURITY_DESCRIPTOR_CONTROL control = 0;
+    DWORD revision = 0;
+    const bool protectedDacl = GetSecurityDescriptorControl(
+        securityDescriptor, &control, &revision) && (control & SE_DACL_PROTECTED) != 0;
+    BYTE systemSid[SECURITY_MAX_SID_SIZE]{};
+    BYTE ownerSid[SECURITY_MAX_SID_SIZE]{};
+    DWORD systemSidBytes = sizeof(systemSid), ownerSidBytes = sizeof(ownerSid);
+    const bool knownSids =
+        CreateWellKnownSid(WinLocalSystemSid, nullptr, systemSid, &systemSidBytes) &&
+        CreateWellKnownSid(WinOwnerRightsSid, nullptr, ownerSid, &ownerSidBytes);
+    bool systemAllowed = false, ownerAllowed = false, onlyExpectedAces = dacl != nullptr;
+    if (dacl != nullptr)
+    {
+        for (DWORD i = 0; i < dacl->AceCount; ++i)
+        {
+            void* rawAce = nullptr;
+            if (!GetAce(dacl, i, &rawAce)) { onlyExpectedAces = false; break; }
+            auto* header = static_cast<ACE_HEADER*>(rawAce);
+            if (header->AceType != ACCESS_ALLOWED_ACE_TYPE)
+            {
+                onlyExpectedAces = false;
+                continue;
+            }
+            auto* ace = static_cast<ACCESS_ALLOWED_ACE*>(rawAce);
+            PSID sid = &ace->SidStart;
+            if (knownSids && EqualSid(sid, systemSid) && (ace->Mask & FILE_ALL_ACCESS) == FILE_ALL_ACCESS)
+                systemAllowed = true;
+            else if (knownSids && EqualSid(sid, ownerSid) && (ace->Mask & FILE_ALL_ACCESS) == FILE_ALL_ACCESS)
+                ownerAllowed = true;
+            else
+                onlyExpectedAces = false;
+        }
+    }
+    if (securityDescriptor) LocalFree(securityDescriptor);
+    if (!protectedDacl || !knownSids || !systemAllowed || !ownerAllowed ||
+        !onlyExpectedAces || dacl == nullptr || dacl->AceCount != 2)
+        return 19;
+
     const std::uint8_t abc[3] = { 'a', 'b', 'c' };
     if (!staging.writeChunk(finalChunk(), abc) ||
         !staging.isComplete() || staging.verifiedFileCount() != 1)
