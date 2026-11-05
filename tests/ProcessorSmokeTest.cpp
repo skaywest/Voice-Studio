@@ -153,6 +153,10 @@ int main()
     restored.setStateInformation(state.getData(), static_cast<int>(state.getSize()));
     expect(restored.parameters.getRawParameterValue("dspEnabled")->load() < 0.5f,
            "DSP toggle is restored from saved state");
+    expect(restored.parameters.getRawParameterValue("aiEnabled")->load() < 0.5f,
+           "AI opt-in is forced off when restoring a saved project");
+    expect(!restored.isAiConversionAvailable(),
+           "restoring a project never marks AI conversion as available");
     expect(std::abs(restored.parameters.getRawParameterValue("outputGain")->load() - 6.0f) < 0.11f,
            "output gain is restored from saved state");
 

@@ -434,7 +434,15 @@ void VoiceStudioAudioProcessor::setStateInformation(const void* data, int size)
 {
     std::unique_ptr<juce::XmlElement> xml(getXmlFromBinary(data, size));
     if (xml && xml->hasTagName(parameters.state.getType()))
+    {
         parameters.replaceState(juce::ValueTree::fromXml(*xml));
+
+        // A project may have saved AI enabled, but restoring a project must
+        // never opt in to a Worker/model session or imply that one is running.
+        // Require a fresh, explicit user action after every state restore.
+        if (auto* aiParameter = parameters.getParameter("aiEnabled"))
+            aiParameter->setValueNotifyingHost(aiParameter->convertTo0to1(0.0f));
+    }
 }
 
 juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
