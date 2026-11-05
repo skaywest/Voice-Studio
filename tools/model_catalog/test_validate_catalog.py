@@ -73,7 +73,9 @@ class CatalogValidationTests(unittest.TestCase):
             validate_catalog(catalog)
 
     def test_rejects_path_traversal_and_executable_files(self):
-        for filename in ("../voice.onnx", "C:\\temp\\voice.onnx", "loader.exe", "model.py"):
+        for filename in ("../voice.onnx", "C:\\temp\\voice.onnx", "loader.exe", "model.py",
+                         "voice.onnx.", "voice.onnx ", "CON.txt", "COM1.pth",
+                         "name:stream.pth", "голос.pth"):
             catalog = valid_catalog()
             catalog["models"][0]["files"][0]["filename"] = filename
             with self.subTest(filename=filename), self.assertRaises(CatalogError):
@@ -116,6 +118,13 @@ class CatalogValidationTests(unittest.TestCase):
         catalog = valid_catalog()
         catalog["models"][0]["files"].append(copy.deepcopy(catalog["models"][0]["files"][0]))
         with self.assertRaisesRegex(CatalogError, "duplicate filenames"):
+            validate_catalog(catalog)
+        catalog = valid_catalog()
+        catalog["models"][0]["files"].append({
+            **copy.deepcopy(catalog["models"][0]["files"][0]),
+            "filename": "VOICE.ONNX",
+        })
+        with self.assertRaisesRegex(CatalogError, "case-insensitive"):
             validate_catalog(catalog)
         catalog = valid_catalog()
         catalog["models"][0]["category"] = "not-a-category"

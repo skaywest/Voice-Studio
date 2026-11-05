@@ -101,13 +101,21 @@ def validate_catalog(data: Any) -> dict[str, Any]:
                 raise CatalogError(f"{file_prefix} must be an object")
             filename = _require_text(item.get("filename"), f"{file_prefix}.filename", maximum=128)
             if (filename in {".", ".."} or Path(filename).name != filename
-                    or "/" in filename or "\\" in filename):
-                raise CatalogError(f"{file_prefix}.filename must be a plain filename")
+                    or "/" in filename or "\\" in filename
+                    or filename.endswith((".", " "))
+                    or not filename.isascii()
+                    or not re.fullmatch(r"[A-Za-z0-9_.-]+", filename)):
+                raise CatalogError(f"{file_prefix}.filename must be a portable plain filename")
+            device_name = filename.split(".", 1)[0].upper()
+            if (device_name in {"CON", "PRN", "AUX", "NUL"}
+                    or re.fullmatch(r"(COM|LPT)([1-9]|[¹²³])", device_name)):
+                raise CatalogError(f"{file_prefix}.filename uses a reserved Windows device name")
             if Path(filename).suffix.lower() in FORBIDDEN_EXTENSIONS:
                 raise CatalogError(f"{file_prefix}.filename uses a forbidden executable/script extension")
-            if filename in seen_filenames:
-                raise CatalogError(f"{prefix} contains duplicate filenames")
-            seen_filenames.add(filename)
+            filename_key = filename.casefold()
+            if filename_key in seen_filenames:
+                raise CatalogError(f"{prefix} contains duplicate filenames (case-insensitive)")
+            seen_filenames.add(filename_key)
 
             size = item.get("size_bytes")
             if not isinstance(size, int) or isinstance(size, bool) or size <= 0:
