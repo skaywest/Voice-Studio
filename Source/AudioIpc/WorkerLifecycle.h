@@ -3,6 +3,7 @@
 #include "WorkerControlAbi.h"
 
 #include <cstdint>
+#include <limits>
 
 namespace voice_studio::ipc
 {
@@ -157,7 +158,9 @@ public:
             ++requestId;
             if (requestId == 0)
                 ++requestId;
-            cooldownDeadlineNs = nowNs + kCooldownNs;
+            const auto maxNs = (std::numeric_limits<std::uint64_t>::max)();
+            cooldownDeadlineNs = nowNs > maxNs - kCooldownNs
+                ? maxNs : nowNs + kCooldownNs;
             state = WorkerLifecycleState::coolingDown;
             return WorkerLifecycleAction::sendStop;
         }

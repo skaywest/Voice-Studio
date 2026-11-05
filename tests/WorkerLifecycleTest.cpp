@@ -3,6 +3,7 @@
 
 #include <cassert>
 #include <cstdint>
+#include <limits>
 
 using namespace voice_studio::ipc;
 
@@ -115,6 +116,21 @@ int main()
     error.result = static_cast<std::uint32_t>(WorkerResult::failed);
     assert(lifecycle.acceptStatus(error));
     assert(lifecycle.currentState() == WorkerLifecycleState::faulted);
+
+
+    // A cooldown deadline near the uint64 limit must saturate rather than wrap
+    // into the past and trigger an immediate unload.
+    WorkerLifecycle overflowSafe;
+    assert(overflowSafe.userStart(100) == WorkerLifecycleAction::launchWorker);
+    assert(overflowSafe.acceptStatus(statusFor(overflowSafe, WorkerState::ready, 101)));
+    assert(overflowSafe.userEnableAi() == WorkerLifecycleAction::sendStart);
+    assert(overflowSafe.acceptStatus(statusFor(overflowSafe, WorkerState::processing, 102)));
+    const auto maxNs = (std::numeric_limits<std::uint64_t>::max)();
+    assert(overflowSafe.userDisableAi(maxNs - 10) == WorkerLifecycleAction::sendStop);
+    assert(overflowSafe.acceptStatus(statusFor(overflowSafe, WorkerState::ready, maxNs - 9)));
+    assert(overflowSafe.tick(maxNs - 1) == WorkerLifecycleAction::none);
+    assert(overflowSafe.currentState() == WorkerLifecycleState::coolingDown);
+    assert(overflowSafe.tick(maxNs) == WorkerLifecycleAction::sendUnloadNow);
 
     return 0;
 }
