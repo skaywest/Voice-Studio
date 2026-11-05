@@ -226,6 +226,8 @@ public:
         WorkerStatusMessage status{};
         if (!pipe.receiveStatus(status, timeoutMs))
         {
+            if (pipe.hasProtocolError())
+                return failAndTerminate();
             if (process.hasExited())
                 handleWorkerExit();
             return false;

@@ -278,6 +278,36 @@ int wmain(int argc, wchar_t** argv)
             return 19;
     }
 
+    // An exactly-sized but invalid status is a protocol violation, not an
+    // idle poll. The receiving endpoint must latch it immediately.
+    {
+        const std::wstring malformedStatusPipe = L"\\\\.\\pipe\\VoiceStudioMalformedStatus-" +
+                                                 std::to_wstring(GetCurrentProcessId());
+        WindowsWorkerControlPipe malformedStatusServer;
+        if (!malformedStatusServer.createServer(malformedStatusPipe))
+            return 21;
+        HANDLE rawClient = CreateFileW(malformedStatusPipe.c_str(), GENERIC_READ | GENERIC_WRITE,
+            0, nullptr, OPEN_EXISTING, 0, nullptr);
+        if (rawClient == INVALID_HANDLE_VALUE)
+            return 22;
+        if (!malformedStatusServer.waitForClient(3000))
+        {
+            CloseHandle(rawClient);
+            return 23;
+        }
+        WorkerStatusMessage invalidStatus{};
+        DWORD written = 0;
+        const bool sent = WriteFile(rawClient, &invalidStatus, sizeof(invalidStatus),
+                                    &written, nullptr) != FALSE && written == sizeof(invalidStatus);
+        WorkerStatusMessage ignored{};
+        const bool accepted = malformedStatusServer.receiveStatus(ignored, 1000);
+        const bool rejectedAsProtocol = !accepted && malformedStatusServer.hasProtocolError();
+        CloseHandle(rawClient);
+        malformedStatusServer.close();
+        if (!sent || !rejectedAsProtocol)
+            return 24;
+    }
+
     wchar_t executable[MAX_PATH]{};
     const DWORD length = GetModuleFileNameW(nullptr, executable, MAX_PATH);
     if (length == 0 || length >= MAX_PATH)

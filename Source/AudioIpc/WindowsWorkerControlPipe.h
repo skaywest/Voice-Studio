@@ -232,9 +232,21 @@ public:
     bool receiveStatus(WorkerStatusMessage& output, DWORD timeoutMs = 3000) noexcept
     {
         WorkerStatusMessage message{};
-        if (!connected || !readExactMessage(&message, static_cast<DWORD>(sizeof(message)), timeoutMs) ||
-            !hasValidWorkerStatus(message))
+        if (!connected)
             return false;
+        if (!readExactMessage(&message, static_cast<DWORD>(sizeof(message)), timeoutMs))
+        {
+            // An empty poll is retryable. A broken pipe, short frame, or any
+            // other transport failure is terminal for this control session.
+            if (lastTransferError != WAIT_TIMEOUT)
+                protocolError = true;
+            return false;
+        }
+        if (!hasValidWorkerStatus(message))
+        {
+            protocolError = true;
+            return false;
+        }
         output = message;
         return true;
     }
