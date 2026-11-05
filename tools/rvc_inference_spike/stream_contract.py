@@ -126,7 +126,13 @@ class RvcRealtimeAdapter:
             raise StreamContractError(
                 f"input block has {input_frames} frames; expected {HOST_BLOCK_FRAMES}"
             )
+        input_count = 0
         for index, sample in enumerate(input_samples):
+            if index >= input_frames:
+                raise StreamContractError(
+                    f"input iterator yielded more than {input_frames} samples"
+                )
+            input_count += 1
             try:
                 finite = math.isfinite(float(sample))
             except (TypeError, ValueError, OverflowError):
@@ -135,6 +141,10 @@ class RvcRealtimeAdapter:
                 raise StreamContractError(
                     f"input block contains a non-finite sample at index {index}"
                 )
+        if input_count != input_frames:
+            raise StreamContractError(
+                f"input iterator yielded {input_count} samples; expected {input_frames}"
+            )
         output = self.engine.process(
             audio, pitch, formant, index_rate, rms_mix, threshold, f0_method
         )
@@ -149,7 +159,13 @@ class RvcRealtimeAdapter:
             raise StreamContractError(
                 f"RVC output has {output_frames} frames; expected {HOST_BLOCK_FRAMES}"
             )
+        output_count = 0
         for index, sample in enumerate(output_samples):
+            if index >= output_frames:
+                raise StreamContractError(
+                    f"RVC output iterator yielded more than {output_frames} samples"
+                )
+            output_count += 1
             try:
                 finite = math.isfinite(float(sample))
             except (TypeError, ValueError, OverflowError):
@@ -158,4 +174,8 @@ class RvcRealtimeAdapter:
                 raise StreamContractError(
                     f"RVC output contains a non-finite sample at index {index}"
                 )
+        if output_count != output_frames:
+            raise StreamContractError(
+                f"RVC output iterator yielded {output_count} samples; expected {output_frames}"
+            )
         return output

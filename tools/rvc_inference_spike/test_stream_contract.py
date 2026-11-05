@@ -134,6 +134,31 @@ class StreamContractTests(unittest.TestCase):
         with self.assertRaisesRegex(StreamContractError, "sized, iterable"):
             adapter.process(iter([0.0] * HOST_BLOCK_FRAMES), 0, 0, 0, 0.5, -60, 0)
 
+    def test_adapter_rejects_iterators_whose_length_disagrees_with_len(self):
+        class InconsistentBuffer:
+            def __init__(self, reported_length, samples):
+                self.reported_length = reported_length
+                self.samples = samples
+
+            def __len__(self):
+                return self.reported_length
+
+            def __iter__(self):
+                return iter(self.samples)
+
+        engine = FakeEngine()
+        adapter = RvcRealtimeAdapter(engine)
+        short_input = InconsistentBuffer(HOST_BLOCK_FRAMES, [0.0] * (HOST_BLOCK_FRAMES - 1))
+        with self.assertRaisesRegex(StreamContractError, "input iterator yielded"):
+            adapter.process(short_input, 0, 0, 0, 0.5, -60, 0)
+        self.assertEqual(engine.calls, 0)
+
+        long_output = InconsistentBuffer(HOST_BLOCK_FRAMES, [0.0] * (HOST_BLOCK_FRAMES + 1))
+        with self.assertRaisesRegex(StreamContractError, "output iterator yielded more"):
+            RvcRealtimeAdapter(FakeEngine(output=long_output)).process(
+                [0.0] * HOST_BLOCK_FRAMES, 0, 0, 0, 0.5, -60, 0
+            )
+
     def test_adapter_rejects_non_finite_input_samples_before_engine_call(self):
         audio = [0.0] * HOST_BLOCK_FRAMES
         audio[17] = float("inf")
