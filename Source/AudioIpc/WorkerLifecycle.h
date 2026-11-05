@@ -88,9 +88,10 @@ public:
                 // A stop acknowledgement means processing has stopped, but the
                 // worker and its model may remain resident during the cooldown.
                 if (state == WorkerLifecycleState::starting ||
-                    state == WorkerLifecycleState::enabling)
-                    state = WorkerLifecycleState::ready;
-                else if (state == WorkerLifecycleState::unloading)
+                    state == WorkerLifecycleState::enabling ||
+                    state == WorkerLifecycleState::running ||
+                    state == WorkerLifecycleState::stopping ||
+                    state == WorkerLifecycleState::unloading)
                     state = WorkerLifecycleState::ready;
                 // Do not discard the cooldown deadline when Stop is acked.
                 break;
@@ -106,7 +107,10 @@ public:
             case WorkerState::stopped:
                 // "stopped" is an engine state, not proof that the process
                 // exited. Keep the supervisor session available for restart.
-                if (state == WorkerLifecycleState::unloading ||
+                if (state == WorkerLifecycleState::starting ||
+                    state == WorkerLifecycleState::enabling ||
+                    state == WorkerLifecycleState::running ||
+                    state == WorkerLifecycleState::unloading ||
                     state == WorkerLifecycleState::stopping)
                     state = WorkerLifecycleState::ready;
                 break;

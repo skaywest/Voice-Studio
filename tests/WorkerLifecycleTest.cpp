@@ -75,6 +75,24 @@ int main()
     assert(lifecycle.currentState() == WorkerLifecycleState::running);
     assert(lifecycle.isAudioConversionAvailable());
 
+    // A Worker that reports READY or STOPPED while processing has ended
+    // must immediately disable conversion, without treating process death as
+    // the only way to leave the running state.
+    assert(lifecycle.acceptStatus(statusFor(lifecycle, WorkerState::ready, 350)));
+    assert(lifecycle.currentState() == WorkerLifecycleState::ready);
+    assert(!lifecycle.isAudioConversionAvailable());
+    assert(lifecycle.userEnableAi() == WorkerLifecycleAction::sendStart);
+    assert(lifecycle.acceptStatus(statusFor(lifecycle, WorkerState::processing, 375)));
+    assert(lifecycle.currentState() == WorkerLifecycleState::running);
+    assert(lifecycle.isAudioConversionAvailable());
+    assert(lifecycle.acceptStatus(statusFor(lifecycle, WorkerState::stopped, 390)));
+    assert(lifecycle.currentState() == WorkerLifecycleState::ready);
+    assert(!lifecycle.isAudioConversionAvailable());
+    assert(lifecycle.userEnableAi() == WorkerLifecycleAction::sendStart);
+    assert(lifecycle.acceptStatus(statusFor(lifecycle, WorkerState::processing, 395)));
+    assert(lifecycle.currentState() == WorkerLifecycleState::running);
+    assert(lifecycle.isAudioConversionAvailable());
+
     assert(lifecycle.userDisableAi(400) == WorkerLifecycleAction::sendStop);
     assert(makeWorkerCommand(WorkerLifecycleAction::sendStop, lifecycle, 5000, command));
     assert(command.command == static_cast<std::uint16_t>(WorkerCommand::stop));
