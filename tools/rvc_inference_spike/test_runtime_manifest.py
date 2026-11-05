@@ -4,7 +4,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from runtime_manifest import ManifestError, build_manifest, _canonical_digest
+from runtime_manifest import ManifestError, build_manifest, _canonical_digest, _safe_relative_path
 
 
 class RuntimeManifestTests(unittest.TestCase):
@@ -72,11 +72,10 @@ class RuntimeManifestTests(unittest.TestCase):
                 build_manifest(root)
 
     def test_rejects_windows_path_aliases(self):
-        with tempfile.TemporaryDirectory() as temp:
-            root = Path(temp)
-            (root / "CON.txt").write_text("x")
-            with self.assertRaisesRegex(ManifestError, "reserved Windows"):
-                build_manifest(root)
+        for path in ("CON.txt", "nul", "COM1.log", "LPT9.data"):
+            with self.subTest(path=path):
+                with self.assertRaisesRegex(ManifestError, "reserved Windows"):
+                    _safe_relative_path(path)
 
     def test_rejects_non_ascii_path(self):
         with tempfile.TemporaryDirectory() as temp:
