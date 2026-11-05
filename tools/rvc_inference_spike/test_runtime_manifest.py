@@ -4,7 +4,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from runtime_manifest import (ManifestError, build_manifest, _canonical_digest,\n                               _safe_relative_path, _validate_unique_paths)
+from runtime_manifest import (\n    ManifestError, build_manifest, _canonical_digest,\n    _safe_relative_path, _validate_unique_paths,\n)
 
 
 class RuntimeManifestTests(unittest.TestCase):
