@@ -44,6 +44,15 @@ public:
             manifestEntries.assign(entries, entries + count);
             createdFiles.reserve(count);
             createdDirectories.reserve(count * 8);
+            std::size_t directoryHandleCapacity = 0;
+            for (std::size_t i = 0; i < count; ++i)
+            {
+                const auto length = static_cast<std::size_t>(entries[i].pathLength);
+                if (length > static_cast<std::size_t>(-1) - directoryHandleCapacity)
+                    return false;
+                directoryHandleCapacity += length;
+            }
+            outstandingDirectoryHandles.reserve(directoryHandleCapacity);
         }
         catch (...) { manifestEntries.clear(); return false; }
 
@@ -102,6 +111,19 @@ public:
 
     bool cleanup() noexcept
     {
+        bool handlesClosed = true;
+        for (std::size_t i = outstandingDirectoryHandles.size(); i > 0; --i)
+        {
+            HANDLE directory = outstandingDirectoryHandles[i - 1];
+            if (CloseHandle(directory))
+                outstandingDirectoryHandles.erase(outstandingDirectoryHandles.begin() +
+                    static_cast<std::ptrdiff_t>(i - 1));
+            else
+                handlesClosed = false;
+        }
+        if (!handlesClosed)
+            return false;
+
         if (file != INVALID_HANDLE_VALUE)
         {
             if (!CloseHandle(file))
@@ -241,7 +263,13 @@ private:
                         directory, FileAttributeTagInfo, &info, sizeof(info)) != FALSE &&
                         (info.FileAttributes & FILE_ATTRIBUTE_DIRECTORY) != 0 &&
                         (info.FileAttributes & FILE_ATTRIBUTE_REPARSE_POINT) == 0;
-                    CloseHandle(directory);
+                    if (!CloseHandle(directory))
+                    {
+                        // Capacity is reserved from manifest path lengths,
+                        // so the failed handle remains tracked for cleanup retry.
+                        outstandingDirectoryHandles.push_back(directory);
+                        return false;
+                    }
                     if (!safe)
                         return false;
                     componentStart = i + 1;
@@ -344,6 +372,7 @@ private:
     std::wstring currentFilePath;
     std::vector<std::wstring> createdDirectories;
     std::vector<std::wstring> createdFiles;
+    std::vector<HANDLE> outstandingDirectoryHandles;
     std::vector<WorkerRuntimeManifestEntry> manifestEntries;
     WorkerRuntimeTransferSequence sequence;
     HANDLE file = INVALID_HANDLE_VALUE;
