@@ -300,3 +300,17 @@ if(VOICE_STUDIO_BUILD_SMOKE_TESTS)
             PROPERTIES TIMEOUT 90)
     endif()
 endif()
+
+# CMake's Release configuration defines NDEBUG by default. Our test programs
+# intentionally use assert() for their checks, so undefine NDEBUG for every
+# test executable in all configurations; otherwise Release CTest would report
+# success while compiling those assertions out.
+get_property(_voice_studio_directory_targets DIRECTORY PROPERTY BUILDSYSTEM_TARGETS)
+foreach(_voice_studio_target IN LISTS _voice_studio_directory_targets)
+    if(_voice_studio_target MATCHES "^VoiceStudio.*Test$")
+        target_compile_options(${_voice_studio_target} PRIVATE
+            "$<$<CXX_COMPILER_ID:MSVC>:/UNDEBUG>"
+            "$<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-UNDEBUG>"
+        )
+    endif()
+endforeach()
