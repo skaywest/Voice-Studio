@@ -51,7 +51,7 @@ def _safe_relative_path(path: str) -> None:
         if component in ("", ".", "..") or component.endswith((".", " ")):
             raise ManifestError(f"unsafe path component: {component!r}")
         base = component.split(".", 1)[0].upper()
-        if base in {"CON", "PRN", "AUX", "NUL"} or re.fullmatch(r"(COM|LPT)[1-9]", base):
+        if base in {"CON", "PRN", "AUX", "NUL"} or re.fullmatch(r"(COM|LPT)([1-9]|[¹²³])", base):
             raise ManifestError(f"reserved Windows path component: {component!r}")
         if not re.fullmatch(r"[A-Za-z0-9_.-]+", component):
             raise ManifestError(f"unsupported path component: {component!r}")
