@@ -11,8 +11,8 @@ from typing import Any
 
 
 def _release_version(value: Any) -> str:
-    """Compare complete package release versions while ignoring local CUDA tags."""
-    return str(value or "").split("+", 1)[0].strip()
+    """Return the complete package version, including its CUDA build tag."""
+    return str(value or "").strip()
 
 
 def _import_torchaudio() -> Any | None:
