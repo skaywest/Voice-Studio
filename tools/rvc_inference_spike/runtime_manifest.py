@@ -75,6 +75,21 @@ def _role_for(path: str) -> str:
     return "runtimeSupport"
 
 
+def _validate_unique_paths(paths: list[str]) -> None:
+    """Reject case-insensitive duplicates and file/directory prefix collisions."""
+    normalized = sorted(path.lower() for path in paths)
+    for index, path in enumerate(normalized):
+        if index and path == normalized[index - 1]:
+            raise ManifestError(f"case-insensitive duplicate runtime path: {path!r}")
+        for other in normalized[index + 1:]:
+            if not other.startswith(path):
+                break
+            if other[len(path):].startswith("/"):
+                raise ManifestError(
+                    f"runtime file/directory path collision: {path!r} and {other!r}"
+                )
+
+
 def _hash_file(path: Path) -> tuple[int, str]:
     before = path.stat(follow_symlinks=False)
     if not stat.S_ISREG(before.st_mode):
@@ -136,6 +151,7 @@ def build_manifest(root: str | Path) -> dict:
             found.append((relative, candidate))
 
     found.sort(key=lambda item: (item[0].lower(), item[0]))
+    _validate_unique_paths([relative for relative, _ in found])
     if not found:
         raise ManifestError("runtime root contains no files")
     if len(found) > MAX_ENTRIES:
