@@ -79,9 +79,10 @@ VoiceStudioAudioProcessor::APVTS::ParameterLayout VoiceStudioAudioProcessor::cre
 
 void VoiceStudioAudioProcessor::prepareToPlay(double sampleRate, int samplesPerBlock)
 {
-    // Reject unsupported host rates rather than silently relabelling their audio as 8/192 kHz.
-    preparedSampleRate = sampleRate >= 8000.0 && sampleRate <= 192000.0
-        ? static_cast<std::uint32_t>(sampleRate) : 0u;
+    // The current RVC transport is explicitly 48 kHz. Do not truncate a
+    // fractional host rate (for example 48000.5) and mislabel it as 48 kHz.
+    // DSP remains available at other host rates; only the AI stream is gated.
+    preparedSampleRate = sampleRate == 48000.0 ? 48000u : 0u;
     // Keep the sequence monotonic across host re-prepare cycles. A Worker/mapping
     // session may outlive prepareToPlay(), so resetting could make stale output match.
     juce::dsp::ProcessSpec spec;
