@@ -51,11 +51,11 @@ def _safe_relative_path(path: str) -> None:
         if component in ("", ".", "..") or component.endswith((".", " ")):
             raise ManifestError(f"unsafe path component: {component!r}")
         base = component.split(".", 1)[0].upper()
-        device_suffix = r"([1-9]|" + chr(0x00B9) + chr(0x00B2) + chr(0x00B3) + r")"
+        device_suffix = r"([1-9]|" + "|".join(chr(n) for n in (0x00B9, 0x00B2, 0x00B3)) + r")"
         if base in {"CON", "PRN", "AUX", "NUL"} or re.fullmatch(r"(COM|LPT)" + device_suffix, base):
             raise ManifestError(f"reserved Windows path component: {component!r}")
         if not component.isascii() or not re.fullmatch(r"[A-Za-z0-9_.-]+", component):
-            raise ManifestError(f"unsupported path component: {component!r}")
+            raise ManifestError(f"path component is not portable ASCII: {component!r}")
 
 
 def _role_for(path: str) -> str:
