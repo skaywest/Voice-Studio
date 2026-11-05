@@ -328,7 +328,11 @@ private:
     done:
         if (hash) BCryptDestroyHash(hash);
         if (algorithm) BCryptCloseAlgorithmProvider(algorithm, 0);
-        CloseHandle(file);
+        // Keep ownership of the handle if CloseHandle fails. The caller's
+        // failure path will retry cleanup instead of losing the only handle
+        // that can still refer to the staged file.
+        if (!CloseHandle(file))
+            return false;
         file = INVALID_HANDLE_VALUE;
         if (!ok)
             return false;
