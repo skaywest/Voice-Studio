@@ -129,13 +129,17 @@ def _canonical_digest(entries: list[dict], total_bytes: int) -> str:
     return hashlib.sha256(data).hexdigest()
 
 
+def _raise_walk_error(error: OSError) -> None:
+    raise ManifestError(f"cannot enumerate runtime directory: {error}") from error
+
+
 def build_manifest(root: str | Path) -> dict:
     base = Path(root).expanduser().resolve(strict=True)
     if not base.is_dir():
         raise ManifestError("runtime root must be a directory")
 
     found: list[tuple[str, Path]] = []
-    for current, dirs, files in os.walk(base, followlinks=False):
+    for current, dirs, files in os.walk(base, followlinks=False, onerror=_raise_walk_error):
         current_path = Path(current)
         for name in list(dirs):
             candidate = current_path / name
