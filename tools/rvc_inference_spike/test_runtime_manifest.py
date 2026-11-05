@@ -4,7 +4,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from runtime_manifest import ManifestError, build_manifest, _canonical_digest, _safe_relative_path
+from runtime_manifest import (ManifestError, build_manifest, _canonical_digest,\n                               _safe_relative_path, _validate_unique_paths)
 
 
 class RuntimeManifestTests(unittest.TestCase):
@@ -76,6 +76,17 @@ class RuntimeManifestTests(unittest.TestCase):
             with self.subTest(path=path):
                 with self.assertRaisesRegex(ManifestError, "reserved Windows"):
                     _safe_relative_path(path)
+
+    def test_rejects_case_insensitive_duplicate_paths(self):
+        with self.assertRaisesRegex(ManifestError, "case-insensitive duplicate"):
+            _validate_unique_paths(["Voice.pth", "voice.PTH"])
+
+    def test_rejects_file_directory_path_collisions(self):
+        with self.assertRaisesRegex(ManifestError, "file/directory path collision"):
+            _validate_unique_paths(["models", "models/voice.pth"])
+
+    def test_allows_distinct_sibling_paths(self):
+        _validate_unique_paths(["models/a.pth", "models/b.pth", "models2/c.pth"])
 
     def test_rejects_non_ascii_path(self):
         with tempfile.TemporaryDirectory() as temp:
