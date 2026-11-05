@@ -6,10 +6,12 @@ on:
     branches:
       - main
       - experiment/no-network-juce
+      - feature/ai-voice-runtime
     paths:
       - "CMakeLists.txt"
       - "cmake/**"
       - "README.md"
+      - "Models/**"
       - "docs/**"
       - "Source/**"
       - "tests/**"
@@ -31,6 +33,12 @@ jobs:
         with:
           python-version: "3.12"
           architecture: "x64"
+
+      - name: Validate offline AI model catalog
+        working-directory: tools/model_catalog
+        run: |
+          python -m unittest -v
+          python validate_catalog.py ../../Models/catalog.json
 
       - name: Test offline RVC environment probe
         working-directory: tools/rvc_worker_probe
