@@ -41,7 +41,13 @@ class ManifestError(ValueError):
 
 
 def _safe_relative_path(path: str) -> None:
-    if not path or len(path.encode("utf-16-le")) // 2 > MAX_PATH_UNITS:
+    if not path:
+        raise ManifestError(f"invalid or overlong relative path: {path!r}")
+    try:
+        path_units = len(path.encode("utf-16-le")) // 2
+    except UnicodeEncodeError as error:
+        raise ManifestError(f"path is not valid portable Unicode: {path!r}") from error
+    if path_units > MAX_PATH_UNITS:
         raise ManifestError(f"invalid or overlong relative path: {path!r}")
     if "\\" in path or path.startswith("/") or path.endswith("/"):
         raise ManifestError(f"path is not portable relative form: {path!r}")

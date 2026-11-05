@@ -109,6 +109,13 @@ class RuntimeManifestTests(unittest.TestCase):
             with self.assertRaisesRegex(ManifestError, "portable ASCII"):
                 build_manifest(root)
 
+    def test_rejects_unpaired_surrogate_path_as_manifest_error(self):
+        # Windows filenames can surface undecodable UTF-16 code units. The
+        # validator must reject them consistently instead of leaking a raw
+        # UnicodeEncodeError from its length check.
+        with self.assertRaisesRegex(ManifestError, "portable Unicode"):
+            _safe_relative_path(chr(0xD800) + ".bin")
+
 
 if __name__ == "__main__":
     unittest.main()
