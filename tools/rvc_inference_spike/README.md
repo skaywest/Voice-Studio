@@ -72,3 +72,29 @@ RVC checkout contains executable Python and must be trusted by the user;
 checkpoints may use pickle-based formats and are not deserialized here. The
 manifest is not yet connected to the native Worker or a UI. No files are
 launched or loaded by this helper.
+
+## Offline Worker runtime manifest builder
+
+The experimental `runtime_manifest.py` helper inventories an explicitly
+selected runtime tree and emits the same canonical SHA-256 manifest format
+used by the native runtime-manifest ABI:
+
+```powershell
+python .\runtime_manifest.py --root "D:\RVC\runtime-bundle" --output ".\runtime-manifest.json"
+```
+
+The tree must be prepared locally and contain the exact files intended for
+staging: RVC Python sources, checkpoint, optional FAISS index, selected HuBERT
+and F0 assets, configuration, and required runtime support files. Paths are
+restricted to portable ASCII relative paths; symlinks, Windows device-name
+aliases, empty files, duplicate/case-colliding paths, and trees exceeding the
+native ABI limits are rejected. The current ABI permits at most 512 files,
+8 GiB per file, and 32 GiB total.
+
+This helper only inventories and hashes files. It does not execute Python,
+install dependencies, download anything, authenticate a publisher, or prove
+that a runtime is safe. Its JSON digest is an integrity checksum, not a
+digital signature. The native Worker must independently verify the manifest
+and every staged file. Runtime transfer and inference are not yet wired to
+this helper; the Worker continues to reject `start` until the audited backend
+and complete runtime-loading path are implemented.
