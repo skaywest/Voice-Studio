@@ -229,9 +229,10 @@ private:
                     root.swap(candidate);
                     return true;
                 }
+                // LocalFree (and any intervening API) may overwrite the
+                // thread's last-error value. Use the error captured immediately
+                // after CreateDirectoryW; never query GetLastError() again here.
                 if (createError != ERROR_ALREADY_EXISTS)
-                    return false;
-                if (GetLastError() != ERROR_ALREADY_EXISTS)
                     return false;
             }
         }
