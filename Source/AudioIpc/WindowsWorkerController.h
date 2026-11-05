@@ -190,8 +190,8 @@ public:
             std::uint8_t extra = 0;
             DWORD extraRead = 0;
             const bool noExtra = sent && ReadFile(source, &extra, 1, &extraRead, nullptr) && extraRead == 0;
-            CloseHandle(source);
-            if (!noExtra)
+            const bool sourceClosed = CloseHandle(source) != FALSE;
+            if (!noExtra || !sourceClosed)
                 return terminateAndFault();
         }
 
