@@ -223,12 +223,10 @@ private:
                 security.bInheritHandle = FALSE;
                 const BOOL created = CreateDirectoryW(candidate.c_str(), &security);
                 const DWORD createError = created ? ERROR_SUCCESS : GetLastError();
-                const auto freeResult = LocalFree(descriptor);
+                LocalFree(descriptor);
                 if (created)
                 {
                     root.swap(candidate);
-                    if (freeResult != nullptr)
-                        return false;
                     return true;
                 }
                 if (createError != ERROR_ALREADY_EXISTS)

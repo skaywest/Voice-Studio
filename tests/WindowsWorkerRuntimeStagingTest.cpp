@@ -114,9 +114,10 @@ int wmain()
                 onlyExpectedAces = false;
         }
     }
+    const DWORD aceCount = dacl != nullptr ? dacl->AceCount : 0;
     if (securityDescriptor) LocalFree(securityDescriptor);
     if (!protectedDacl || !knownSids || !systemAllowed || !ownerAllowed ||
-        !onlyExpectedAces || dacl == nullptr || dacl->AceCount != 2)
+        !onlyExpectedAces || aceCount != 2)
         return 19;
 
     const std::uint8_t abc[3] = { 'a', 'b', 'c' };
